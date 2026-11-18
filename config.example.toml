@@ -1,0 +1,16 @@
+[general]
+default_connection = "local"
+history_limit = 1000
+
+[query]
+timeout = "30s"
+default_range = "1h"
+max_series = 500
+
+[[connections]]
+name = "local"
+url = "http://localhost:9090"
+
+[[connections]]
+name = "cluster"
+url = "http://vmselect:8481/select/0/prometheus"
