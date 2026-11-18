@@ -1,9 +1,9 @@
 package app
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"errors"
-	tea "github.com/charmbracelet/bubbletea"
 	"promtui/internal/config"
 	"promtui/internal/history"
 	"strings"
@@ -16,7 +16,7 @@ func TestCancelIgnoresLateCompletionAndKeepsResults(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	m.cancel = cancel
 	id := m.id
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if ctx.Err() == nil {
 		t.Fatal("request still active")
 	}
@@ -50,7 +50,7 @@ func TestQuitFlushesCoalescedHistory(t *testing.T) {
 	if m.save() != nil {
 		t.Fatal("concurrent snapshot writes")
 	}
-	_, quit := m.Update(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	_, quit := m.Update(tea.KeyPressMsg{Code: 'q', Mod: tea.ModCtrl})
 	if quit != nil {
 		t.Fatal("quit before save")
 	}

@@ -7,13 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/api"
 	"promtui/internal/config"
+	"promtui/internal/editor"
 	"promtui/internal/history"
 	"promtui/internal/query"
 	"promtui/internal/ui"
@@ -36,6 +37,7 @@ type completed struct {
 type saved struct{ err error }
 type copied struct{ err error }
 type Model struct {
+	assist
 	opt                                   Options
 	editor                                textarea.Model
 	table                                 ui.Table
@@ -68,7 +70,7 @@ func (m *Model) resize(w, h int) {
 	m.editor.SetWidth(max(8, w))
 	m.editor.SetHeight(max(1, min(6, h/4)))
 }
-func (m *Model) Init() tea.Cmd        { return textarea.Blink }
+func (m *Model) Init() tea.Cmd        { return nil }
 func (m *Model) HistoryError() string { return m.historyError }
 func (m *Model) save() tea.Cmd {
 	if m.opt.HistoryLimit == 0 {
@@ -146,6 +148,11 @@ var presets = []time.Duration{15 * time.Minute, time.Hour, 6 * time.Hour, 24 * t
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case analysisMsg:
+		return m, m.analyzed(v)
+	case suggestionsMsg:
+		m.suggested(v)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.resize(v.Width, v.Height)
 	case saved:
@@ -180,12 +187,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "Copied"
 		}
-	case tea.KeyMsg:
+	case tea.PasteMsg:
+		if m.help || m.details || m.quitting {
+			return m, nil
+		}
+		if m.searching {
+			m.searchText += v.Content
+			m.searchHistory()
+			return m, nil
+		}
+	case tea.KeyPressMsg:
 		if m.quitting {
 			return m, nil
 		}
 		switch v.String() {
 		case "ctrl+c", "ctrl+q":
+			m.dismiss()
 			running := m.cancel != nil
 			m.stop()
 			if running && v.String() == "ctrl+c" {
@@ -198,10 +215,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case "f1":
+			m.dismiss()
 			m.help = !m.help
 			m.details, m.offset = false, 0
 			return m, nil
 		case "f2":
+			m.dismiss()
 			m.details = !m.details
 			m.help, m.offset = false, 0
 			return m, nil
@@ -217,8 +236,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if cmd, handled := m.assistKey(v); handled {
+			return m, cmd
+		}
 		switch v.String() {
-		case "ctrl+g", "f5":
+		case "ctrl+enter", "ctrl+g", "f5":
+			m.dismiss()
 			return m, m.run()
 		case "ctrl+t":
 			m.opt.Ranged = !m.opt.Ranged
@@ -234,7 +257,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.opt.Window = next
 			m.opt.Ranged = true
 			return m, nil
-		case "esc", "tab":
+		case "esc":
+			m.dismiss()
 			if m.editor.Focused() {
 				m.editor.Blur()
 				return m, nil
@@ -245,10 +269,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch v.String() {
 			case "alt+up", "ctrl+p":
 				m.recall(1)
-				return m, nil
+				return m, m.schedule(false)
 			case "alt+down", "ctrl+n":
 				m.recall(-1)
-				return m, nil
+				return m, m.schedule(false)
 			}
 		} else {
 			switch v.String() {
@@ -284,15 +308,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	before, pos := m.editor.Value(), editor.Position(m.editor)
 	var cmd tea.Cmd
 	m.editor, cmd = m.editor.Update(msg)
+	if m.editor.Focused() && (before != m.editor.Value() || pos != editor.Position(m.editor)) {
+		return m, tea.Batch(cmd, m.schedule(false))
+	}
 	return m, cmd
 }
 func (m *Model) page() int { return max(2, m.height-m.editor.Height()-5) }
 
 var title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 
-func (m *Model) View() string {
+func (m *Model) View() tea.View {
+	v := tea.NewView(m.screen())
+	v.AltScreen = true
+	return v
+}
+func (m *Model) screen() string {
 	if m.width < 24 || m.height < 10 {
 		return "Enlarge terminal (24×10)"
 	}
@@ -317,18 +350,29 @@ func (m *Model) View() string {
 	if m.historyError != "" {
 		status = m.historyError + " · " + status
 	}
-	lines := []string{title.Render(clip("PromTUI · " + m.opt.Connection.Name + " · " + mode + " · " + focus)), m.editor.View(), clip("Last result · " + m.summary)}
+	lines := []string{title.Render(clip("PromTUI · " + m.opt.Connection.Name + " · " + mode + " · " + focus)), editor.View(m.editor, m.width)}
+	if m.searching || m.popup {
+		lines = append(lines, m.popupLines()...)
+	}
+	if m.diagnostic != "" {
+		lines = append(lines, clip("PromQL: "+m.diagnostic))
+	}
+	lines = append(lines, clip("Last result · "+m.summary))
 	if m.notice != "" {
 		lines = append(lines, clip("Notice: "+m.notice))
 	}
-	lines = append(lines, m.table.View(m.width, m.page()), clip(status), clip("Ctrl+G run · Ctrl+T mode · Tab focus · F1 keys · Ctrl+Q quit"))
+	room := m.height - (len(lines) - 1 + m.editor.Height()) - 2
+	if room >= 2 {
+		lines = append(lines, m.table.View(m.width, room))
+	}
+	lines = append(lines, clip(status), clip("Ctrl+Enter run · Ctrl+Space complete · Ctrl+R history · Esc focus · ? keys"))
 	return strings.Join(lines, "\n")
 }
 
 func (m *Model) overlay() []string {
-	text := "PromTUI · Keys\nCtrl+G / F5  execute\nEnter  newline\nCtrl+T  instant/range\nCtrl+W  next range\nCtrl+P/N  recall older/newer\nTab / Esc  editor/results\nResults: ↑↓ PgUp/Dn · ←→ pan · l labels\n[ / ] older/newer sample · n/v sort name/value\ny/Y copy value/labels\nF2 full status and warnings\nCtrl+C cancel or quit · Ctrl+Q quit"
+	text := "PromTUI · Keys\nCtrl+Enter  execute (fallback Ctrl+G / F5)\nEnter  newline\nCtrl+Space  suggestions · ↑↓ select · Tab accept\nCtrl+R  fuzzy history · Enter restore\nAlt+Up/Down  older/newer query\nEsc  dismiss popup / switch focus\n?  help (F1 anywhere)\nCtrl+T  instant/range · Ctrl+W next range\nResults: ↑↓ PgUp/Dn · ←→ pan · l labels\n[ / ] older/newer sample · n/v sort name/value\ny/Y copy value/labels\nF2 full status and warnings\nCtrl+C cancel or quit · Ctrl+Q quit"
 	if m.details {
-		text = strings.Join([]string{"Request details", ui.Plain(m.status), ui.Plain(m.historyError), "Last result: " + ui.Plain(m.summary), ui.Plain(m.notice)}, "\n")
+		text = strings.Join([]string{"Request details", ui.Plain(m.status), ui.Plain(m.diagnostic), ui.Plain(m.historyError), "Last result: " + ui.Plain(m.summary), ui.Plain(m.notice)}, "\n")
 	}
 	return strings.Split(ansi.Hardwrap(text, max(1, m.width), false), "\n")
 }

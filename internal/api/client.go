@@ -23,11 +23,15 @@ type Client struct {
 	HTTP *http.Client
 }
 
-func (c Client) Query(ctx context.Context, ranged bool, form url.Values) (Response, error) {
+func (c Client) base() string {
 	base := strings.TrimRight(c.Base, "/")
 	if !strings.HasSuffix(base, "/api/v1") {
 		base += "/api/v1"
 	}
+	return base
+}
+func (c Client) Query(ctx context.Context, ranged bool, form url.Values) (Response, error) {
+	base := c.base()
 	path := "/query"
 	if ranged {
 		path = "/query_range"

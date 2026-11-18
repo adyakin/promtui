@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"promtui/internal/app"
 	"promtui/internal/config"
 	"promtui/internal/history"
@@ -75,7 +75,7 @@ func run() error {
 		return fmt.Errorf("load %s: %w", *hist, err)
 	}
 	m := app.New(o, entries)
-	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
+	_, err = tea.NewProgram(m).Run()
 	if err == nil && m.HistoryError() != "" {
 		return fmt.Errorf("%s", m.HistoryError())
 	}
