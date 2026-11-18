@@ -26,6 +26,7 @@ func run() error {
 	start := flag.String("start", "", "range start (RFC3339; requires -end)")
 	end := flag.String("end", "", "fixed evaluation time or range end (RFC3339)")
 	step := flag.Duration("step", 0, "range step (default: automatic)")
+	graphics := flag.String("graphics", "auto", "range graphs: auto (Rex/Kitty), kitty, or off")
 	flag.Parse()
 	optional := *path == ""
 	if optional {
@@ -39,6 +40,15 @@ func run() error {
 		*name = cfg.General.Default
 	}
 	o := app.Options{Timeout: cfg.Query.Timeout, Window: cfg.Query.Range, Step: *step, Limit: cfg.Query.MaxSeries, HistoryPath: *hist, HistoryLimit: cfg.General.History}
+	switch *graphics {
+	case "auto":
+		o.Graphics = os.Getenv("TERM_PROGRAM") == "rex" || os.Getenv("TERM") == "xterm-kitty"
+	case "kitty":
+		o.Graphics = true
+	case "off":
+	default:
+		return fmt.Errorf("unknown -graphics %q", *graphics)
+	}
 	for _, c := range cfg.Connections {
 		if c.Name == *name {
 			o.Connection = c
@@ -75,6 +85,7 @@ func run() error {
 		return fmt.Errorf("load %s: %w", *hist, err)
 	}
 	m := app.New(o, entries)
+	defer func() { fmt.Fprint(os.Stdout, m.CloseGraphics()) }()
 	_, err = tea.NewProgram(m).Run()
 	if err == nil && m.HistoryError() != "" {
 		return fmt.Errorf("%s", m.HistoryError())

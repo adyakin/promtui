@@ -9,9 +9,13 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/x/ansi v0.11.7
+	github.com/fogleman/gg v1.3.0
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/prometheus/common v0.67.1
 	github.com/prometheus/prometheus v0.305.5
 	github.com/sahilm/fuzzy v0.1.1
+	golang.org/x/image v0.34.0
+	golang.org/x/sys v0.45.0
 )
 
 require (
@@ -39,7 +43,6 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

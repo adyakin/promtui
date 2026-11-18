@@ -25,14 +25,17 @@ func (r Request) form() url.Values {
 		f.Set("time", end)
 		return f
 	}
-	step := r.Step
-	if step == 0 {
-		step = max(time.Second, (r.Window / 240).Round(time.Second))
-	}
+	step := r.step()
 	f.Set("start", r.End.Add(-r.Window).UTC().Format(time.RFC3339Nano))
 	f.Set("end", end)
 	f.Set("step", strconv.FormatFloat(step.Seconds(), 'f', -1, 64))
 	return f
+}
+func (r Request) step() time.Duration {
+	if r.Step > 0 {
+		return r.Step
+	}
+	return max(time.Second, (r.Window / 240).Round(time.Second))
 }
 
 type Series struct {
@@ -41,8 +44,10 @@ type Series struct {
 	Text         *string // string result instead of numeric sample
 }
 type Result struct {
-	Series  []Series
-	Notices []string
+	Series     []Series
+	Notices    []string
+	Start, End time.Time
+	Step       time.Duration
 }
 
 func Execute(ctx context.Context, c api.Client, r Request) (Result, error) {
@@ -51,6 +56,9 @@ func Execute(ctx context.Context, c api.Client, r Request) (Result, error) {
 		return Result{}, err
 	}
 	out := Result{Notices: resp.Warnings}
+	if r.Window > 0 {
+		out.Start, out.End, out.Step = r.End.Add(-r.Window), r.End, r.step()
+	}
 	skipped := false
 	add := func(m model.Metric, samples []model.SamplePair, text *string) {
 		name := string(m[model.MetricNameLabel])

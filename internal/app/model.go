@@ -16,11 +16,13 @@ import (
 	"promtui/internal/config"
 	"promtui/internal/editor"
 	"promtui/internal/history"
+	"promtui/internal/kitty"
 	"promtui/internal/query"
 	"promtui/internal/ui"
 )
 
 type Options struct {
+	Graphics              bool
 	Connection            config.Connection
 	Timeout, Window, Step time.Duration
 	End                   time.Time
@@ -37,6 +39,7 @@ type completed struct {
 type saved struct{ err error }
 type copied struct{ err error }
 type Model struct {
+	chart graphState
 	assist
 	opt                                   Options
 	editor                                textarea.Model
@@ -147,7 +150,17 @@ func (m *Model) recall(delta int) {
 var presets = []time.Duration{15 * time.Minute, time.Hour, 6 * time.Hour, 24 * time.Hour, 7 * 24 * time.Hour}
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.update(msg)
+	draw := m.syncGraph(msg)
+	if m.quitting && !m.saving && !m.chart.sending && m.chart.displayed.cols == 0 {
+		return model, tea.Quit
+	}
+	return model, tea.Batch(cmd, draw)
+}
+func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case graphFrame, tea.RawMsg:
+		return m, nil
 	case analysisMsg:
 		return m, m.analyzed(v)
 	case suggestionsMsg:
@@ -155,6 +168,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.resize(v.Width, v.Height)
+		if m.opt.Graphics {
+			m.chart.cw, m.chart.ch = kitty.CellSize()
+		}
 	case saved:
 		m.saving = false
 		m.historyError = ""
@@ -163,9 +179,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.dirty {
 			return m, m.save()
-		}
-		if m.quitting {
-			return m, tea.Quit
 		}
 	case completed:
 		if m.id != v.id {
@@ -179,6 +192,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.status = fmt.Sprintf("Done in %s", duration)
 		m.table = ui.Table{Rows: v.result.Series, Labels: true}
+		// Sorting table rows must not reorder the legend/visibility map.
+		m.table.Rows = append([]query.Series(nil), m.table.Rows...)
+		m.setGraphResult(v.result)
 		m.summary = fmt.Sprintf("%d series · %s", len(m.table.Rows), m.requestLabel)
 		m.notice = strings.Join(v.result.Notices, "; ")
 	case copied:
@@ -209,11 +225,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Cancelled"
 				return m, nil
 			}
-			if m.saving {
-				m.quitting = true
-				return m, nil
-			}
-			return m, tea.Quit
+			m.quitting = true
+			return m, nil
 		case "f1":
 			m.dismiss()
 			m.help = !m.help
@@ -238,6 +251,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if cmd, handled := m.assistKey(v); handled {
 			return m, cmd
+		}
+		if v.String() == "f4" {
+			m.graphKey("f4")
+			return m, nil
 		}
 		switch v.String() {
 		case "ctrl+enter", "ctrl+g", "f5":
@@ -275,6 +292,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.schedule(false)
 			}
 		} else {
+			if m.graphKey(v.String()) {
+				return m, nil
+			}
 			switch v.String() {
 			case "up", "k":
 				m.table.Move(-1)
@@ -378,6 +398,9 @@ func (m *Model) screen() string {
 		lines = append(lines, clip("PromQL: "+m.diagnostic))
 	}
 	name := "Results"
+	if m.chart.enabled {
+		name = "Graph · UTC"
+	}
 	if m.summary != "No query executed" {
 		name += " · " + m.summary
 	}
@@ -392,6 +415,13 @@ func (m *Model) screen() string {
 			lines = append(lines, clip("  Run a query with Ctrl+Enter."))
 		case len(m.table.Rows) == 0:
 			lines = append(lines, clip("  No matching series."))
+		case m.chart.enabled:
+			lines = append(lines, m.legend())
+			if m.chart.err != "" {
+				lines = append(lines, clip("  "+m.chart.err))
+			} else if !m.popup && !m.searching && m.graphPlace().cols == 0 {
+				lines = append(lines, clip("  Enlarge graph or enable a series (Space)."))
+			}
 		default:
 			lines = append(lines, strings.Split(m.table.View(m.width, room), "\n")...)
 		}
@@ -401,7 +431,13 @@ func (m *Model) screen() string {
 	}
 	keys := "Ctrl+Enter Run   Ctrl+Space Complete   Ctrl+R History   Esc Results   ? Help"
 	if !m.editor.Focused() {
-		keys = "↑↓ Series   ←→ Pan   [ ] Samples   Esc Edit   ? Help"
+		keys = "g Graph   ↑↓ Series   ←→ Pan   [ ] Samples   Esc Edit   ? Help"
+	}
+	if m.chart.enabled {
+		keys = "F4 Table   Esc Focus   Ctrl+W Range   ? Help"
+		if !m.editor.Focused() {
+			keys = "g Table   ↑↓ Series   Space Hide/show   Esc Edit   ? Help"
+		}
 	}
 	if m.popup {
 		keys = "Tab Accept   ↑↓ Select   Esc Dismiss"
@@ -421,6 +457,9 @@ func (m *Model) overlay() []string {
 	text := "PromTUI · Keys\nCtrl+Enter  execute (fallback Ctrl+G / F5)\nEnter  newline\nCtrl+Space  suggestions · ↑↓ select · Tab accept\nCtrl+R  fuzzy history · Enter restore\nAlt+Up/Down  older/newer query\nEsc  dismiss popup / switch focus\n?  help (F1 anywhere)\nCtrl+T  instant/range · Ctrl+W next range\nResults: ↑↓ PgUp/Dn · ←→ pan · l labels\n[ / ] older/newer sample · n/v sort name/value\ny/Y copy value/labels\nF2 full status and warnings\nCtrl+C cancel or quit · Ctrl+Q quit"
 	if m.details {
 		text = strings.Join([]string{"Request details", ui.Plain(m.status), ui.Plain(m.diagnostic), ui.Plain(m.historyError), "Last result: " + ui.Plain(m.summary), ui.Plain(m.notice)}, "\n")
+	}
+	if !m.details {
+		text += "\nF4 table/graph · g in results · graph ↑↓ select · Space hide/show"
 	}
 	return strings.Split(ansi.Hardwrap(text, max(1, m.width), false), "\n")
 }
