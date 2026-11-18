@@ -35,3 +35,22 @@ func TestScopedMenuLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestGraphLegendAndFooterFitSmallScreen(t *testing.T) {
+	m := New(Options{Graphics: true, Window: 6 * time.Hour, Ranged: true}, nil)
+	m.resize(24, 10)
+	m.editor.SetValue("up\nup")
+	m.diagnostic, m.notice = "diagnostic", "notice"
+	result := sampleResult(true)
+	result.Notices = []string{"notice"}
+	m.Update(completed{result: result})
+	rows := strings.Split(ansi.Strip(m.screen()), "\n")
+	if len(rows) != 10 || !strings.Contains(rows[0], "UTC") || !strings.Contains(rows[7], "› 1/2") || !strings.Contains(rows[9], "F5 Run") {
+		t.Fatal(strings.Join(rows, "\n"))
+	}
+	for _, row := range rows {
+		if ansi.StringWidth(row) > 24 {
+			t.Fatal(row)
+		}
+	}
+}

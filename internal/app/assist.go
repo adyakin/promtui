@@ -183,70 +183,22 @@ func (m *Model) searchHistory() {
 	}
 	m.selected = 0
 }
-func (m *Model) assistKey(k tea.KeyPressMsg) (tea.Cmd, bool) {
-	key := k.String()
-	if key == "ctrl+r" {
-		m.dismiss()
-		m.searchText = ""
-		m.searching = true
+func (m *Model) editFilter(text string, backspace bool) {
+	s := &m.searchText
+	if m.filtering {
+		s = &m.seriesFilter
+	}
+	if backspace {
+		_, n := utf8.DecodeLastRuneInString(*s)
+		*s = (*s)[:len(*s)-n]
+	} else {
+		*s += ui.Plain(text)
+	}
+	if m.filtering {
+		m.refreshSeries()
+	} else {
 		m.searchHistory()
-		return nil, true
 	}
-	if m.searching || m.popup {
-		switch key {
-		case "esc":
-			m.dismiss()
-			return nil, true
-		case "down", "up":
-			if key == "down" {
-				m.selected = min(m.selected+1, max(0, len(m.options)-1))
-			} else {
-				m.selected = max(0, m.selected-1)
-			}
-			return nil, true
-		}
-	}
-	if m.searching {
-		switch key {
-		case "enter":
-			if len(m.options) > 0 {
-				m.editor.SetValue(m.options[m.selected])
-				m.cursor = -1
-				m.editor.Focus()
-				return m.schedule(false), true
-			}
-		case "backspace":
-			_, n := utf8.DecodeLastRuneInString(m.searchText)
-			m.searchText = m.searchText[:len(m.searchText)-n]
-			m.searchHistory()
-		default:
-			if k.Text != "" {
-				m.searchText += k.Text
-				m.searchHistory()
-			}
-		}
-		return nil, true
-	}
-	if key == "?" && (!m.editor.Focused() || !editor.LiteralAt(m.editor.Value(), editor.Position(m.editor))) {
-		m.dismiss()
-		m.help = true
-		return nil, true
-	}
-	if m.editor.Focused() {
-		switch key {
-		case "ctrl+space", "ctrl+@":
-			return m.schedule(true), true
-		case "tab":
-			if m.popup && len(m.options) > 0 {
-				m.accept()
-				m.dismiss()
-				m.diagnostic = editor.Diagnostic(m.editor.Value())
-				return nil, true
-			}
-			return m.schedule(true), true
-		}
-	}
-	return nil, false
 }
 func (m *Model) menu(x, y int) *lipgloss.Layer {
 	label := "Suggestions"
@@ -254,9 +206,10 @@ func (m *Model) menu(x, y int) *lipgloss.Layer {
 		label = m.context.Label + " values"
 	}
 	if m.searching {
-		label = "History · " + m.searchText + " ▏"
+		label = "History · Search: " + m.searchText + " ▏"
 	}
 	w := min(52, m.width-2)
+	y = min(y, m.height-6)
 	n := max(1, min(6, m.height-2-y-3))
 	out := []string{label}
 	if len(m.options) == 0 {

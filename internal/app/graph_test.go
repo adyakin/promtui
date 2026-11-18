@@ -14,7 +14,7 @@ func TestResizeOverlayAndSwitchDuringGraphUpload(t *testing.T) {
 	r := query.Result{Start: time.Unix(0, 0), End: time.Unix(3, 0), Step: time.Second, Series: []query.Series{{Name: "cpu", Samples: []model.SamplePair{{Timestamp: 1000, Value: 1}}}}}
 	_, render := m.Update(completed{result: r})
 	f := render().(graphFrame)
-	if f.err != nil || f.key.row != 6 || f.key.rows != 17 {
+	if f.err != nil || f.key.row != 5 || f.key.rows != 17 {
 		t.Fatal(f.key, f.err)
 	}
 	_, upload := m.Update(f)

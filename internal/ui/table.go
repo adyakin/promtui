@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/query"
 )
@@ -15,7 +16,7 @@ import (
 type Table struct {
 	Rows         []query.Series
 	Row, Back, X int // Back counts from the newest sample in the selected series.
-	Labels       bool
+	Expanded     bool
 }
 
 func Plain(s string) string {
@@ -29,8 +30,9 @@ func Plain(s string) string {
 
 func (t *Table) Move(n int) {
 	if len(t.Rows) > 0 {
-		t.Row = min(max(t.Row+n, 0), len(t.Rows)-1)
-		t.Back = 0
+		if row := min(max(t.Row+n, 0), len(t.Rows)-1); row != t.Row {
+			t.Row, t.Back, t.X, t.Expanded = row, 0, 0, false
+		}
 	}
 }
 func (t *Table) Sample(n int) {
@@ -55,7 +57,7 @@ func (t *Table) Sort(value bool) {
 		}
 		return a.Labels < b.Labels
 	})
-	t.Row, t.Back = 0, 0
+	t.Row, t.Back, t.X, t.Expanded = 0, 0, 0, false
 }
 func (t Table) Fields(i int) (string, string, string) {
 	s := t.Rows[i]
@@ -71,21 +73,79 @@ func (t Table) Fields(i int) (string, string, string) {
 	return p.Timestamp.Time().UTC().Format("2006-01-02 15:04:05.000"), v, fmt.Sprintf("%d/%d", j+1, len(s.Samples))
 }
 func (t Table) View(w, h int) string {
+	if h < 1 || len(t.Rows) == 0 {
+		return ""
+	}
+	t.Pan(0, w)
 	var lines []string
-	line := func(prefix, text string) { lines = append(lines, prefix+ansi.Cut(Plain(text), t.X, t.X+max(1, w-2))) }
-	line("  ", fmt.Sprintf("%-23s  %-12s  %-11s  %s", "UTC", "Value", "Sample", "Series"))
-	first := max(0, t.Row-h+2)
-	for i := first; i < min(first+h-1, len(t.Rows)); i++ {
-		ts, v, idx := t.Fields(i)
-		label := t.Rows[i].Name
-		if t.Labels {
-			label = t.Rows[i].Labels
+	line := func(prefix, text string, selected bool) {
+		s := prefix + ansi.Cut(Plain(text), t.X, t.X+max(1, w-2))
+		if selected {
+			s = lipgloss.NewStyle().Reverse(true).Width(w).Render(s)
 		}
+		lines = append(lines, s)
+	}
+	room := h
+	if h >= 2 {
+		line("  ", t.columns(w, "Value", "Series", "Sample", "UTC"), false)
+		room--
+	}
+	detail := 0
+	if t.Expanded {
+		detail = min(room-1, 4, 1+len(t.Rows[t.Row].Samples))
+	}
+	room -= detail
+	first := max(0, t.Row-room+1)
+	for i := first; i < min(first+room, len(t.Rows)); i++ {
 		prefix := "  "
 		if i == t.Row {
 			prefix = "› "
 		}
-		line(prefix, fmt.Sprintf("%s  %-12s  %-11s  %s", ts, v, idx, label))
+		line(prefix, t.rowText(w, i), i == t.Row)
+		if i == t.Row && detail > 0 {
+			line("  ", "Labels: "+t.Rows[i].Labels, false)
+			samples := t.Rows[i].Samples
+			copy := t
+			for n := 0; n < detail-1; n++ {
+				copy.Back = min(t.Back, len(samples)-detail+1) + n
+				ts, v, idx := copy.Fields(i)
+				mark := "  "
+				if copy.Back == t.Back {
+					mark = "· "
+				}
+				line(mark, fmt.Sprintf("%s  %s  %s", v, idx, ts), false)
+			}
+		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (t *Table) Pan(delta, w int) {
+	if len(t.Rows) == 0 {
+		return
+	}
+	extent := ansi.StringWidth(Plain(t.rowText(w, t.Row)))
+	if t.Expanded {
+		extent = max(extent, ansi.StringWidth(Plain("Labels: "+t.Rows[t.Row].Labels)))
+	}
+	t.X = min(max(0, t.X+delta), max(0, extent-w+2))
+}
+
+func (t Table) rowText(w, i int) string {
+	ts, value, sample := t.Fields(i)
+	label := t.Rows[i].Labels
+	if label == "" || label == "{}" {
+		label = t.Rows[i].Name
+	}
+	return t.columns(w, value, label, sample, ts)
+}
+
+func (t Table) columns(w int, value, label, sample, ts string) string {
+	pad := func(s string, n int) string {
+		s = ansi.Truncate(Plain(s), n, "…")
+		return s + strings.Repeat(" ", n-ansi.StringWidth(s))
+	}
+	valueWidth := min(12, max(6, w/4))
+	labelWidth := max(12, w-valueWidth-36)
+	return pad(value, valueWidth) + "  " + pad(label, labelWidth) + "  " + pad(sample, 8) + "  " + ts
 }

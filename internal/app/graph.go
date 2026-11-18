@@ -14,7 +14,6 @@ import (
 	"promtui/internal/graph"
 	"promtui/internal/kitty"
 	"promtui/internal/query"
-	"promtui/internal/ui"
 )
 
 type placement struct{ revision, row, cols, rows, cw, ch int }
@@ -47,62 +46,27 @@ func (m *Model) setGraphResult(r query.Result) {
 		g.visible[i] = i < 8
 	}
 }
-func (m *Model) graphKey(k string) bool {
-	g := &m.chart
-	if k == "g" || k == "f4" {
-		switch {
-		case !m.opt.Graphics:
-			m.status = "Kitty graphics unavailable · use Rex or -graphics kitty"
-		case g.result.Start.IsZero():
-			m.status = "Graph needs a range result · Ctrl+T then Ctrl+Enter"
-		default:
-			g.enabled = !g.enabled
-			g.preferTable = !g.enabled
+func (m *Model) hasVisibleSeries() bool {
+	for _, on := range m.chart.visible {
+		if on {
+			return true
 		}
-		return true
 	}
-	if !g.enabled {
-		return false
-	}
-	switch k {
-	case "up", "k":
-		g.selected = max(0, g.selected-1)
-	case "down", "j":
-		g.selected = min(max(0, len(g.visible)-1), g.selected+1)
-	case "space", " ":
-		if len(g.visible) > 0 {
-			g.visible[g.selected] = !g.visible[g.selected]
-			g.revision++
-		}
-	case "esc":
-		return false
-	}
-	return true
+	return false
 }
 func (m *Model) graphPlace() placement {
 	g := &m.chart
-	if !g.enabled || m.quitting || m.help || m.details || m.popup || m.searching || len(g.visible) == 0 {
+	if !g.enabled || m.quitting || m.scope()&mainKeys == 0 || !m.hasVisibleSeries() {
 		return placement{}
 	}
-	// Rows above image: header, query heading, editor, results heading,
-	// optional diagnostic/notice, then the legend.
-	row := 5 + min(m.editor.LineCount(), m.editor.Height())
-	if m.showDiagnostic() {
-		row++
-	}
-	if m.notice != "" {
-		row++
-	}
-	rows := m.height - row - 1
+	// The image starts on the first result row (Kitty uses 1-based positions)
+	// and leaves the legend, status and shortcuts beneath it.
+	row := m.resultTop() + 1
+	rows := m.height - m.resultTop() - 3
 	if rows < 5 || m.width < 32 {
 		return placement{}
 	}
-	for _, on := range g.visible {
-		if on {
-			return placement{g.revision, row, m.width, rows, g.cw, g.ch}
-		}
-	}
-	return placement{}
+	return placement{g.revision, row, m.width, rows, g.cw, g.ch}
 }
 
 func (m *Model) legend() string {
@@ -110,7 +74,8 @@ func (m *Model) legend() string {
 	if len(g.visible) == 0 {
 		return ""
 	}
-	var b strings.Builder
+	var entries []string
+	width := 0
 	// Keep the selected series first; further entries form a compact legend.
 	for n := 0; n < len(g.visible); n++ {
 		i := (g.selected + n) % len(g.visible)
@@ -118,20 +83,30 @@ func (m *Model) legend() string {
 		if !g.visible[i] {
 			state = "○"
 		}
+		entry := lipgloss.NewStyle().Foreground(lipgloss.Color(graph.Color(i))).Render(state) + " " + seriesName(g.result.Series[i])
 		if n == 0 {
-			fmt.Fprintf(&b, "› %d/%d ", i+1, len(g.visible))
+			entry = fmt.Sprintf("› %d/%d %s", i+1, len(g.visible), entry)
 		}
-		name := ui.Plain(g.result.Series[i].Labels)
-		if name == "" || name == "{}" {
-			name = g.result.Series[i].Name
+		suffix := ""
+		if remaining := len(g.visible) - n - 1; remaining > 0 {
+			suffix = fmt.Sprintf("  +%d more", remaining)
 		}
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(graph.Color(i))).Render(state + " " + name))
-		b.WriteString("  ")
-		if ansi.StringWidth(b.String()) >= m.width {
+		room := m.width - ansi.StringWidth(suffix) - width
+		if n > 0 {
+			entry = "  " + entry
+		}
+		if n > 0 && ansi.StringWidth(entry) > room {
 			break
 		}
+		entry = ansi.Truncate(entry, max(1, room), "…")
+		entries = append(entries, entry)
+		width += ansi.StringWidth(entry)
 	}
-	return ansi.Truncate(b.String(), m.width, "…")
+	legend := strings.Join(entries, "")
+	if remaining := len(g.visible) - len(entries); remaining > 0 {
+		legend += fmt.Sprintf("  +%d more", remaining)
+	}
+	return ansi.Truncate(legend, m.width, "…")
 }
 
 // One render and one raw write at a time. RawMsg comes back through Update

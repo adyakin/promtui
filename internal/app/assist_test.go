@@ -20,8 +20,12 @@ func TestMidTokenAcceptance(t *testing.T) {
 	m.context = editor.At(m.editor.Value(), editor.Position(m.editor))
 	m.options = []string{"node_cpu"}
 	m.popup = true
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if !m.popup || !m.editor.Focused() || m.editor.Value() != "sum(\nnode_foo + up\n)" {
+		t.Fatal("Shift+Tab escaped the completion overlay")
+	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.editor.Value() != "sum(\nnode_cpu + up\n)" || m.editor.Column() != 8 || m.editor.Line() != 1 || m.popup {
+	if m.editor.Value() != "sum(\nnode_cpu + up\n)" || m.editor.Column() != 8 || m.editor.Line() != 1 || m.popup || !m.editor.Focused() {
 		t.Fatal(m.editor.Value(), m.editor.Column(), m.editor.Line())
 	}
 }
@@ -44,6 +48,16 @@ func TestCacheAndStaleResponse(t *testing.T) {
 func TestHistoryFuzzyRestoreWithoutExecuting(t *testing.T) {
 	m := New(Options{Connection: config.Connection{Name: "A"}}, []history.Entry{{Connection: "B", Query: "vector(12)"}, {Connection: "A", Query: "vector(42)"}})
 	m.editor.SetValue("draft")
+	m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if !m.searching || !m.editor.Focused() || m.searchText != "" {
+		t.Fatal("Tab leaked through History")
+	}
+	press(m, tea.KeyEsc)
+	if m.searching || !m.editor.Focused() || m.editor.Value() != "draft" {
+		t.Fatal("Esc did not restore Query from History")
+	}
 	m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
 	m.Update(tea.PasteMsg{Content: "v42"})
 	if !slices.Equal(m.options, []string{"vector(42)"}) {
