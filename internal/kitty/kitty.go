@@ -8,6 +8,10 @@ import (
 )
 
 const BaseID = 0x507455
+const ProbeID = BaseID + 2
+
+// Query a 1×1 RGB pixel without creating a placement.
+func Probe() string { return fmt.Sprintf("\x1b_Ga=q,i=%d,t=d,f=24,s=1,v=1;AAAA\x1b\\", ProbeID) }
 
 func Delete(id int) string { return fmt.Sprintf("\x1b_Ga=d,d=I,i=%d,q=2\x1b\\", id) }
 func Clear() string        { return Delete(BaseID) + Delete(BaseID+1) }

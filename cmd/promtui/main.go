@@ -43,6 +43,7 @@ func run() error {
 	switch *graphics {
 	case "auto":
 		o.Graphics = os.Getenv("TERM_PROGRAM") == "rex" || os.Getenv("TERM") == "xterm-kitty"
+		o.ProbeGraphics = !o.Graphics
 	case "kitty":
 		o.Graphics = true
 	case "off":

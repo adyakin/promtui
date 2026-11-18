@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/atotto/clipboard"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/api"
 	"promtui/internal/config"
@@ -23,6 +24,7 @@ import (
 
 type Options struct {
 	Graphics              bool
+	ProbeGraphics         bool
 	Connection            config.Connection
 	Timeout, Window, Step time.Duration
 	End                   time.Time
@@ -73,7 +75,12 @@ func (m *Model) resize(w, h int) {
 	m.editor.SetWidth(max(8, w))
 	m.editor.SetHeight(max(1, min(6, h/4)))
 }
-func (m *Model) Init() tea.Cmd        { return nil }
+func (m *Model) Init() tea.Cmd {
+	if m.opt.ProbeGraphics {
+		return tea.Raw(kitty.Probe())
+	}
+	return nil
+}
 func (m *Model) HistoryError() string { return m.historyError }
 func (m *Model) save() tea.Cmd {
 	if m.opt.HistoryLimit == 0 {
@@ -159,6 +166,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case uv.KittyGraphicsEvent:
+		if m.opt.ProbeGraphics && v.Options.ID == kitty.ProbeID {
+			m.opt.ProbeGraphics = false
+			if string(v.Payload) == "OK" {
+				m.opt.Graphics = true
+				m.chart.cw, m.chart.ch = kitty.CellSize()
+				m.chart.enabled = !m.chart.result.Start.IsZero() && !m.chart.preferTable
+			}
+		}
+		return m, nil
 	case graphFrame, tea.RawMsg:
 		return m, nil
 	case analysisMsg:
