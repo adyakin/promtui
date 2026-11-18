@@ -65,7 +65,7 @@ func styles(s string, pos int) map[int]int {
 
 // The textarea handles editing; this viewport paints real source offsets, so
 // ANSI sequences never enter the buffer or interfere with cursor movement.
-func View(e textarea.Model, width int) string {
+func View(e textarea.Model, width int) (rows []string, cursorX, cursorY int) {
 	s := e.Value()
 	lines := strings.Split(s, "\n")
 	pos := Position(e)
@@ -75,14 +75,15 @@ func View(e textarea.Model, width int) string {
 	for _, l := range lines[:start] {
 		off += len(l) + 1
 	}
-	var rows []string
 	for i := start; i < min(len(lines), start+e.Height()); i++ {
 		prefix := fmt.Sprintf("%3d │ ", i+1)
 		room := max(1, width-ansi.StringWidth(prefix))
 		var b strings.Builder
 		left := 0
 		if i == e.Line() {
-			left = max(0, ansi.StringWidth(lines[i][:pos-off])-room+2)
+			col := ansi.StringWidth(lines[i][:pos-off])
+			left = max(0, col-room+2)
+			cursorX, cursorY = ansi.StringWidth(prefix)+col-left, i-start
 		}
 		last := -1
 		for j, r := range lines[i] + " " {
@@ -116,8 +117,5 @@ func View(e textarea.Model, width int) string {
 		rows = append(rows, ansi.Truncate(prefix+line, width, ""))
 		off += len(lines[i]) + 1
 	}
-	for len(rows) < e.Height() {
-		rows = append(rows, "")
-	}
-	return strings.Join(rows, "\n")
+	return
 }

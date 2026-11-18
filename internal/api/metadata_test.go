@@ -11,6 +11,7 @@ import (
 func TestScopedSuggestions(t *testing.T) {
 	for _, tc := range []struct{ kind, metric, label, prefix, path, selector string }{
 		{"expr", "", "", "node_", "/label/__name__/values", `{__name__=~"node_.*"}`},
+		{"expr", "", "", "node cpu tot", "/label/__name__/values", `{__name__=~"node.*cpu.*tot.*"}`},
 		{"label", "up", "", "jo", "/labels", "up"},
 		{"value", "up", "instance", "192.", "/label/instance/values", `up{instance=~"192\\..*"}`},
 	} {

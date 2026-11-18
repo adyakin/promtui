@@ -1,9 +1,25 @@
 package editor
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestMetricPhrase(t *testing.T) {
+	const phrase = "node  cpu tot"
+	s := "up or rate(" + phrase + "[5m])"
+	c := At(s, strings.IndexByte(s, '['))
+	values := c.Filter([]string{"node_cpu_guest_seconds_total", "node_total_cpu", "node_cpu_seconds_total"})
+	if c.Prefix != phrase || !slices.Equal(values, []string{"node_cpu_seconds_total", "node_cpu_guest_seconds_total"}) || s[:c.Start]+values[0]+s[c.End:] != "up or rate(node_cpu_seconds_total[5m])" {
+		t.Fatal(c, values)
+	}
+	for _, s := range []string{"up or node", "up + node", "up\nnode"} {
+		if c := At(s, len(s)); c.Prefix != "node" {
+			t.Fatal(s, c)
+		}
+	}
+}
 
 func TestIncompleteContext(t *testing.T) {
 	for _, tc := range []struct{ input, kind, metric, label, prefix string }{

@@ -2,6 +2,8 @@
 
 Run `make run` in Rex. Try `node_cpu` for metric names, `node_cpu_seconds_total{inst` for labels, or `node_cpu_seconds_total{instance="192.` for instance values. Suggestions use the labels returned by the active backend, including relabeled instance names.
 
+Typing the opening quote in a metric-scoped matcher opens a bounded list of label values beside the cursor, even before the first character. The menu overlays the workspace without pushing results down; Esc reveals the underlying rows. The editor grows with the query, `›` marks the focused section, and the bottom bar shows controls for the current focus.
+
 | Key | Action |
 |---|---|
 | Ctrl+Enter / Enter | Execute / insert a newline. Ctrl+G and F5 still execute on terminals that cannot distinguish modified Enter. |
@@ -26,4 +28,4 @@ The Rex key probe received `0d` for Enter and `ESC [ 13 ; 5 u` for Ctrl+Enter un
 
 Run `make test` for offline coverage or `PROMTUI_TEST_URL=http://localhost:9090 go test -race ./...` to include live query checks. Tests cover unfinished selector contexts, quote/comment boundaries, matching brackets, metadata paths and filters, stale completions, cache hits, mid-token replacement, and fuzzy restore.
 
-Completion is prefix-based and bounded, not an exhaustive catalog. It targets classic PromQL metric and label identifiers; quoted UTF-8 identifiers, full regex-aware prefix completion and MetricsQL-specific syntax are not covered. The table remains the results view; graph integration is Milestone 3.
+For fuzzy metric completion, type `node cpu tot` and press Tab on `node_cpu_seconds_total`. The first fragment matches the beginning of the name; subsequent fragments match in order, with tighter matches first. Tab replaces the entire phrase. Label values still use literal prefix matching. Suggestions are bounded, not an exhaustive catalog. Quoted UTF-8 identifiers, full regex-aware prefix completion and MetricsQL-specific syntax are not covered. Graph integration is Milestone 3.

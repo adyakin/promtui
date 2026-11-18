@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 var labelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -26,11 +27,15 @@ func (c Client) Suggestions(ctx context.Context, kind, metric, label, prefix str
 	}
 	switch kind {
 	case "expr":
-		if prefix == "" {
+		terms := strings.Fields(prefix)
+		if len(terms) == 0 {
 			return nil, nil
 		}
 		path = "/label/__name__/values"
-		form.Set("match[]", `{__name__=~`+strconv.Quote(regexp.QuoteMeta(prefix)+".*")+"}")
+		for i, t := range terms {
+			terms[i] = regexp.QuoteMeta(t)
+		}
+		form.Set("match[]", `{__name__=~`+strconv.Quote(strings.Join(terms, ".*")+".*")+"}")
 	case "value":
 		if !labelName.MatchString(label) || metric == "" && prefix == "" {
 			return nil, nil

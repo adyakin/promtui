@@ -3,6 +3,7 @@ package editor
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -74,7 +75,9 @@ func At(s string, pos int) Context {
 	c := Context{Kind: "expr", Start: pos, End: pos}
 	var stack []string
 	var last, prev string
-	for _, t := range scan(s) {
+	ts := scan(s)
+	current := -1
+	for i, t := range ts {
 		if t.Start >= pos {
 			break
 		}
@@ -103,6 +106,7 @@ func At(s string, pos int) Context {
 				return c
 			}
 			if ident(v) || v[0] >= '0' && v[0] <= '9' {
+				current = i
 				c.Start, c.End, c.Prefix = t.Start, t.End, s[t.Start:pos]
 				break
 			}
@@ -141,6 +145,19 @@ func At(s string, pos int) Context {
 	if last == "offset" {
 		c.Kind = "duration"
 	}
+	// Adjacent identifiers aren't valid PromQL. Treat them as search terms
+	// while editing, stopping at operators, keywords and line boundaries.
+	if c.Kind == "expr" && current >= 0 && ident(c.Prefix) && !slices.Contains(words, c.Prefix) {
+		for i := current - 1; i >= 0; i-- {
+			t := ts[i]
+			gap := s[t.End:c.Start]
+			if !ident(t.Text) || slices.Contains(words, t.Text) || gap == "" || strings.Trim(gap, " \t") != "" {
+				break
+			}
+			c.Start = t.Start
+		}
+		c.Prefix = s[c.Start:pos]
+	}
 	return c
 }
 func (c Context) Local() []string {
@@ -161,13 +178,41 @@ func (c Context) Local() []string {
 func (c Context) Filter(values []string) []string {
 	seen := map[string]bool{}
 	var out []string
+	terms := strings.Fields(c.Prefix)
+	multi := c.Kind == "expr" && len(terms) > 1
+	spans := map[string]int{}
 	for _, v := range values {
-		if strings.HasPrefix(v, c.Prefix) && !seen[v] {
+		match := strings.HasPrefix(v, c.Prefix)
+		if multi && strings.HasPrefix(v, terms[0]) {
+			match = true
+			end := len(terms[0])
+			for _, term := range terms[1:] {
+				d := strings.Index(v[end:], term)
+				if d < 0 {
+					match = false
+					break
+				}
+				end += d + len(term)
+			}
+			spans[v] = end
+		}
+		if match && !seen[v] {
 			seen[v] = true
 			out = append(out, v)
 		}
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if multi {
+			if spans[a] != spans[b] {
+				return spans[a] < spans[b]
+			}
+			if len(a) != len(b) {
+				return len(a) < len(b)
+			}
+		}
+		return a < b
+	})
 	return out
 }
 func (c Context) Insert(v string) string {

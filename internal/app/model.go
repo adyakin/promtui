@@ -316,7 +316,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, cmd
 }
-func (m *Model) page() int { return max(2, m.height-m.editor.Height()-5) }
+func (m *Model) page() int {
+	rows := m.height - min(m.editor.LineCount(), m.editor.Height()) - 6
+	if m.notice != "" {
+		rows--
+	}
+	if m.showDiagnostic() {
+		rows--
+	}
+	return max(1, rows)
+}
+func (m *Model) showDiagnostic() bool {
+	return m.diagnostic != "" && !(m.popup && m.context.Kind == "value")
+}
 
 var title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 
@@ -341,32 +353,68 @@ func (m *Model) screen() string {
 	if !m.opt.End.IsZero() {
 		mode += " @ " + m.opt.End.Format(time.RFC3339)
 	}
-	focus := "editor"
-	if !m.editor.Focused() {
-		focus = "results"
-	}
 	clip := func(s string) string { return ansi.Truncate(ui.Plain(s), m.width, "…") }
+	section := func(name string, active bool) string {
+		mark := "  "
+		if active {
+			mark = "› "
+		}
+		s := clip(mark + name + " ")
+		s += strings.Repeat("─", max(0, m.width-ansi.StringWidth(s)))
+		if active {
+			return title.Render(s)
+		}
+		return s
+	}
 	status := m.status
 	if m.historyError != "" {
 		status = m.historyError + " · " + status
 	}
-	lines := []string{title.Render(clip("PromTUI · " + m.opt.Connection.Name + " · " + mode + " · " + focus)), editor.View(m.editor, m.width)}
-	if m.searching || m.popup {
-		lines = append(lines, m.popupLines()...)
-	}
-	if m.diagnostic != "" {
+	head := lipgloss.NewStyle().Bold(true).Reverse(true).Width(m.width)
+	lines := []string{head.Render(clip(" PromTUI  │  " + m.opt.Connection.Name + "  ·  " + mode)), section("Query", m.editor.Focused())}
+	rows, x, y := editor.View(m.editor, m.width)
+	lines = append(lines, rows...)
+	if m.showDiagnostic() {
 		lines = append(lines, clip("PromQL: "+m.diagnostic))
 	}
-	lines = append(lines, clip("Last result · "+m.summary))
+	name := "Results"
+	if m.summary != "No query executed" {
+		name += " · " + m.summary
+	}
+	lines = append(lines, section(name, !m.editor.Focused()))
 	if m.notice != "" {
 		lines = append(lines, clip("Notice: "+m.notice))
 	}
-	room := m.height - (len(lines) - 1 + m.editor.Height()) - 2
-	if room >= 2 {
-		lines = append(lines, m.table.View(m.width, room))
+	room := m.height - len(lines) - 2
+	if room > 0 {
+		switch {
+		case m.summary == "No query executed":
+			lines = append(lines, clip("  Run a query with Ctrl+Enter."))
+		case len(m.table.Rows) == 0:
+			lines = append(lines, clip("  No matching series."))
+		default:
+			lines = append(lines, strings.Split(m.table.View(m.width, room), "\n")...)
+		}
 	}
-	lines = append(lines, clip(status), clip("Ctrl+Enter run · Ctrl+Space complete · Ctrl+R history · Esc focus · ? keys"))
-	return strings.Join(lines, "\n")
+	for len(lines) < m.height-2 {
+		lines = append(lines, "")
+	}
+	keys := "Ctrl+Enter Run   Ctrl+Space Complete   Ctrl+R History   Esc Results   ? Help"
+	if !m.editor.Focused() {
+		keys = "↑↓ Series   ←→ Pan   [ ] Samples   Esc Edit   ? Help"
+	}
+	if m.popup {
+		keys = "Tab Accept   ↑↓ Select   Esc Dismiss"
+	}
+	if m.searching {
+		keys = "Enter Restore   ↑↓ Select   Esc Cancel"
+	}
+	lines = append(lines, clip(" "+status), lipgloss.NewStyle().Width(m.width).Reverse(true).Render(clip(" "+keys)))
+	base := strings.Join(lines, "\n")
+	if m.popup || m.searching {
+		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.menu(x, 3+y)).Render()
+	}
+	return base
 }
 
 func (m *Model) overlay() []string {

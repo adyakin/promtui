@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/sahilm/fuzzy"
 	"promtui/internal/api"
@@ -82,19 +83,20 @@ func (m *Model) analyzed(a analysisMsg) tea.Cmd {
 	}
 	c := a.at
 	m.diagnostic = a.diagnostic
-	if c.Kind == "" || !a.explicit && c.Prefix == "" {
+	scopedValue := c.Kind == "value" && c.Metric != "" && c.Label != ""
+	if c.Kind == "" || !a.explicit && c.Prefix == "" && !scopedValue {
 		return nil
 	}
 	m.context = c
 	m.options = c.Local()
-	m.popup = a.explicit || len(m.options) > 0
+	m.popup = a.explicit || scopedValue || len(m.options) > 0
 	if c.Kind == "duration" || c.Kind == "expr" && c.Prefix == "" || c.Kind == "value" && c.Metric == "" && c.Prefix == "" {
 		return nil
 	}
 	k := cacheKey{c.Kind, c.Metric, c.Label, c.Prefix}
 	if hit, ok := m.cache[k]; ok && time.Now().Before(hit.until) {
 		m.options = c.Filter(append(m.options, hit.values...))
-		m.popup = a.explicit || len(m.options) > 0
+		m.popup = m.popup || len(m.options) > 0
 		return nil
 	}
 	id := m.generation
@@ -246,19 +248,23 @@ func (m *Model) assistKey(k tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 	return nil, false
 }
-func (m *Model) popupLines() []string {
-	title := "Complete · Tab accept"
+func (m *Model) menu(x, y int) *lipgloss.Layer {
+	label := "Suggestions"
+	if m.context.Kind == "value" {
+		label = m.context.Label + " values"
+	}
 	if m.searching {
-		title = "History · " + m.searchText + " ▏ · Enter restore"
+		label = "History · " + m.searchText + " ▏"
 	}
-	if m.hint != "" {
-		title += " · " + m.hint
-	}
-	clip := func(s string) string { return ansi.Truncate(ui.Plain(s), m.width, "…") }
-	out := []string{clip(title)}
-	n := max(1, min(4, m.height-m.editor.Height()-7))
+	w := min(52, m.width-2)
+	n := max(1, min(6, m.height-2-y-3))
+	out := []string{label}
 	if len(m.options) == 0 {
-		return append(out, "  No matches")
+		msg := m.hint
+		if msg == "" {
+			msg = "No matches"
+		}
+		out = append(out, msg)
 	}
 	first := max(0, m.selected-n+1)
 	for i := first; i < min(first+n, len(m.options)); i++ {
@@ -266,7 +272,21 @@ func (m *Model) popupLines() []string {
 		if i == m.selected {
 			mark = "›"
 		}
-		out = append(out, clip(fmt.Sprintf("%s %s", mark, m.options[i])))
+		out = append(out, fmt.Sprintf("%s %s", mark, m.options[i]))
 	}
-	return out
+	contentWidth := min(23, w)
+	for _, s := range out {
+		contentWidth = max(contentWidth, min(w, ansi.StringWidth(ui.Plain(s))))
+	}
+	for i, s := range out {
+		row := lipgloss.NewStyle().Width(contentWidth)
+		if i == 0 {
+			row = row.Bold(true)
+		} else if len(m.options) > 0 && i == m.selected-first+1 {
+			row = row.Reverse(true)
+		}
+		out[i] = row.Render(ansi.Truncate(ui.Plain(s), contentWidth, "…"))
+	}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("6")).Render(strings.Join(out, "\n"))
+	return lipgloss.NewLayer(box).X(min(x, m.width-contentWidth-2)).Y(y).Z(1)
 }
