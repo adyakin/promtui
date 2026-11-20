@@ -127,7 +127,7 @@ func TestTargetsBoundedQueueAndCancellation(t *testing.T) {
 
 func TestTargetsUI(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"status":"success","data":{"activeTargets":[{"health":"up","labels":{"instance":"alpha","job":"beta"},"lastScrapeDuration":0.13},{"health":"down","labels":{"instance":"zeta","job":"alpha","env":"PROD"},"lastError":"`+strings.Repeat("long", 30)+`"},{"labels":{"instance":"unknown"}}],"droppedTargets":[{"discoveredLabels":{"__address__":"dropped","job":"unused"}}]}}`)
+		fmt.Fprint(w, `{"status":"success","data":{"activeTargets":[{"health":"up","labels":{"instance":"alpha","job":"beta"},"lastScrapeDuration":0.13},{"health":"down","labels":{"instance":"zeta","job":"alpha","env":"PROD"},"discoveredLabels":{"__meta_region":"North"},"lastError":"`+strings.Repeat("long", 30)+`"},{"labels":{"instance":"unknown"}}],"droppedTargets":[{"discoveredLabels":{"__address__":"dropped","job":"unused"}}]}}`)
 	}))
 	defer s.Close()
 	m := New(Options{Connection: config.Connection{URL: s.URL}, Timeout: time.Second}, nil)
@@ -141,6 +141,14 @@ func TestTargetsUI(t *testing.T) {
 	if len(a.visible) != 3 || a.visible[0].health != targetDown || a.visible[1].health != targetUnknown ||
 		a.visible[2].health != targetUp || a.visible[0].source != "default" || !a.sources[0].fallback {
 		t.Fatal("wrong starting view, default source, or ordering")
+	}
+	for _, filter := range []string{"DOW", "dwn", "mt_rgn", "nrth", "lnglng"} {
+		press(m, '/')
+		m.Update(tea.PasteMsg{Content: filter})
+		if len(a.visible) != 1 || a.visible[0].health != targetDown {
+			t.Fatalf("filter %q did not find the down target:\n%s", filter, m.screen())
+		}
+		press(m, tea.KeyEsc)
 	}
 	press(m, tea.KeyEnd)
 	id := a.selection()

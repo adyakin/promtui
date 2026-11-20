@@ -58,6 +58,7 @@ type promQLState struct {
 	opt                                   Options
 	editor                                textarea.Model
 	table                                 ui.Table
+	resultFilter                          resultFilterState
 	entries                               []history.Entry
 	cursor                                int
 	draft                                 string
@@ -81,7 +82,7 @@ func New(o Options, entries []history.Entry) *Model {
 	e.CharLimit = 65536
 	e.MaxWidth = 0
 	m := &Model{alerts: newAlertsState(), targets: newTargetsState(o.Connection), promQLState: promQLState{
-		opt: o, entries: entries, cursor: -1, editor: e, status: "Ready", summary: "No query executed",
+		opt: o, entries: entries, cursor: -1, editor: e, resultFilter: newResultFilter(), status: "Ready", summary: "No query executed",
 	}}
 	m.resize(80, 24)
 	return m
@@ -92,6 +93,7 @@ func (m *Model) resize(w, h int) {
 	m.editor.SetHeight(max(1, min(6, h/4, h-9)))
 	m.alerts.input.SetWidth(max(1, w-13))
 	m.targets.input.SetWidth(max(1, w-13))
+	m.resultFilter.input.SetWidth(max(1, w-13))
 	m.sizeSavedInput()
 }
 func (m *Model) Init() tea.Cmd {
@@ -143,6 +145,10 @@ func (m *Model) runMode(ranged bool) tea.Cmd {
 
 func (m *Model) clearQueryResults() {
 	m.table = ui.Table{}
+	m.resultFilter.input.Blur()
+	m.resultFilter.input.Reset()
+	m.resultFilter.anchor = ui.Table{}
+	m.resultFilter.allRows, m.resultFilter.matches, m.resultFilter.before = nil, nil, ""
 	m.setGraphResult(query.Result{})
 	m.notice = ""
 	m.queryError = queryError{}
@@ -303,9 +309,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.queryError = queryError{}
 		m.status = fmt.Sprintf("Done in %s", duration)
 		m.reportProgramStatus(programstatus.Done, "Query completed")
-		m.table = ui.Table{Rows: v.result.Series}
 		// Sorting table rows must not reorder the legend/visibility map.
-		m.table.Rows = append([]query.Series(nil), m.table.Rows...)
+		m.resultFilter.allRows = append([]query.Series(nil), v.result.Series...)
+		m.table = ui.Table{Rows: m.resultFilter.allRows}
 		m.setGraphResult(v.result)
 		m.summary = "No data"
 		if len(m.table.Rows) > 0 {
@@ -337,6 +343,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		} else if m.panel&savedQueryKeys != 0 {
 			return m, m.editSavedInput(v)
+		} else if m.resultFilter.input.Focused() {
+			return m, m.editResultFilter(v)
 		} else if scope := m.scope(); scope == historyKeys || scope == filterKeys {
 			m.editFilter(v.Content, false)
 			return m, nil
@@ -372,6 +380,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 type workspace struct {
 	resultY, bodyY, bottomY int
 	diagnostic, notice      bool
+	filter                  bool
 }
 
 func (m *Model) workspace() workspace {
@@ -380,6 +389,10 @@ func (m *Model) workspace() workspace {
 	// their gutter, the header, status and footer.
 	spare := m.height - 9 - editorRows
 	w := workspace{resultY: 4 + editorRows, bottomY: m.height - 3}
+	w.filter = m.resultFilter.input.Focused() || m.resultFilter.input.Value() != ""
+	if w.filter {
+		spare--
+	}
 	if spare > 0 && m.showDiagnostic() {
 		w.diagnostic = true
 		w.resultY++
@@ -388,6 +401,9 @@ func (m *Model) workspace() workspace {
 	w.bodyY = w.resultY + 1
 	if spare > 0 && m.notice != "" {
 		w.notice = true
+		w.bodyY++
+	}
+	if w.filter {
 		w.bodyY++
 	}
 	return w
@@ -484,16 +500,32 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	if m.graphView() {
 		name = "Results · Graph"
 	}
+	count := len(m.table.Rows)
+	if m.chart.enabled {
+		count = m.graphSeriesCount()
+	}
 	if m.queryPhase == querySucceeded {
-		meta = fmt.Sprintf("%d series", len(m.table.Rows))
+		meta = fmt.Sprintf("%d series", count)
 	}
 	var resultRows []string
 	if w.notice {
 		resultRows = append(resultRows, " Notice: "+ui.Plain(m.notice))
 	}
+	var filterCursor *tea.Cursor
+	if w.filter {
+		line := "  Filter: " + ui.Plain(m.resultFilter.input.Value())
+		if m.resultFilter.input.Focused() {
+			line = m.resultFilter.input.View()
+			if c := m.resultFilter.input.Cursor(); c != nil && !m.quitting {
+				filterCursor = nativeCursor(min(m.width-2, 1+c.X), w.bodyY-1)
+			}
+		}
+		resultRows = append(resultRows, line)
+	}
 	room := w.bottomY - w.bodyY
 	body := make([]string, room)
 	switch {
+	case room == 0:
 	case m.queryPhase == queryRunning:
 		body[0] = "  " + executingQuery
 	case m.queryPhase == queryCancelled:
@@ -506,7 +538,9 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 		} else {
 			body[0] = "  Run with Ctrl+Enter."
 		}
-	case len(m.table.Rows) == 0:
+	case count == 0 && len(m.resultFilter.allRows) > 0:
+		body[0] = "  No series matching the current filter"
+	case count == 0:
 		body[0] = "  No data"
 	case m.chart.enabled && m.chart.err != "":
 		if room == 1 {
@@ -529,7 +563,7 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	}
 	base := strings.Join([]string{m.header(promQLTab, m.queryStatus()...),
 		frame("Query", runHint, queryRows, m.width, m.scope() == editKeys), "",
-		frame(name, meta, append(resultRows, body...), m.width, m.scope()&resultKeys != 0),
+		frame(name, meta, append(resultRows, body...), m.width, m.scope()&resultKeys != 0 || m.resultFilter.input.Focused()),
 		clip(" " + status), m.footer()}, "\n")
 	if m.popup || m.searching {
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.menu(1+x, 3+y)).Render(), nil
@@ -546,5 +580,5 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	if m.scope() == editKeys && !m.quitting {
 		return base, nativeCursor(1+x, 2+y) // left border, then header and top border
 	}
-	return base, nil
+	return base, filterCursor
 }

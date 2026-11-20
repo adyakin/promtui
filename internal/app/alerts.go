@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
@@ -61,7 +60,7 @@ type alertsState struct {
 func newAlertsState() alertsState {
 	input := textinput.New()
 	input.Prompt = "  Filter: "
-	input.Placeholder = "type a label value"
+	input.Placeholder = "type to filter alerts"
 	input.CharLimit = 4096
 	input.SetVirtualCursor(false)
 	return alertsState{input: input}
@@ -82,10 +81,10 @@ func (a *alertsState) selection() string {
 }
 
 func (a *alertsState) rebuild(id string, row int) {
-	lower := strings.ToLower(a.currentFilter())
+	filter := newFuzzyFilter(a.currentFilter())
 	a.visible = a.visible[:0]
 	for _, item := range a.rows {
-		if item.matches(lower) {
+		if item.matches(filter) {
 			a.visible = append(a.visible, item)
 		}
 	}

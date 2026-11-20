@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
@@ -89,7 +88,7 @@ type targetsState struct {
 func newTargetsState(conn config.Connection) targetsState {
 	input := textinput.New()
 	input.Prompt = "  Filter: "
-	input.Placeholder = "source, job, instance, URL, label"
+	input.Placeholder = "health, source, labels, scrape fields"
 	input.CharLimit = 4096
 	input.SetVirtualCursor(false)
 	a := targetsState{input: input}
@@ -139,7 +138,7 @@ func (a *targetsState) selection() string {
 func (a *targetsState) moveTo(row int) { a.row = max(0, min(row, len(a.visible)-1)) }
 
 func (a *targetsState) rebuild(id string, row int) {
-	filter := strings.ToLower(a.currentFilter())
+	filter := newFuzzyFilter(a.currentFilter())
 	health := targetHealthOrder[a.health]
 	clear(a.visible)
 	a.visible = a.visible[:0]
@@ -150,7 +149,7 @@ func (a *targetsState) rebuild(id string, row int) {
 		for j := range source.rows {
 			item := &source.rows[j]
 			if (item.health == health || health == targetAllActive && item.health != targetDropped) &&
-				strings.Contains(item.search, filter) {
+				item.matches(filter) {
 				a.visible = append(a.visible, item)
 			}
 		}

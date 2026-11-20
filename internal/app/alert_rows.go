@@ -24,8 +24,9 @@ const (
 
 type alertRow struct {
 	alertmanager.Alert
-	id    string
-	group alertStatus
+	id     string
+	group  alertStatus
+	search []string
 }
 
 func newAlertRow(source string, a alertmanager.Alert) alertRow {
@@ -50,7 +51,19 @@ func newAlertRow(source string, a alertmanager.Alert) alertRow {
 	case a.Status.State == "unprocessed":
 		group = alertUnprocessed
 	}
-	return alertRow{Alert: a, id: id, group: group}
+	row := alertRow{Alert: a, id: id, group: group}
+	row.search = []string{source, a.Fingerprint, row.state(), a.Status.State, a.GeneratorURL}
+	for _, timestamp := range []time.Time{a.StartsAt, a.EndsAt, a.UpdatedAt} {
+		if !timestamp.IsZero() {
+			row.search = append(row.search, timestamp.Format(time.RFC3339Nano))
+		}
+	}
+	for _, receiver := range a.Receivers {
+		row.search = append(row.search, receiver.Name)
+	}
+	row.search = append(row.search, a.Status.SilencedBy...)
+	row.search = append(row.search, a.Status.InhibitedBy...)
+	return row
 }
 
 func (a alertRow) state() string {
@@ -81,16 +94,8 @@ func countAlerts(rows []alertRow) alertCounts {
 	return c
 }
 
-func (a alertRow) matches(lower string) bool {
-	if lower == "" {
-		return true
-	}
-	for _, value := range a.Labels {
-		if strings.Contains(strings.ToLower(value), lower) {
-			return true
-		}
-	}
-	return false
+func (a alertRow) matches(f fuzzyFilter) bool {
+	return f.matches(a.search...) || matchLabels(f, a.Labels) || matchLabels(f, a.Annotations)
 }
 
 func severityRank(s string) int {

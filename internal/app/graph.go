@@ -49,11 +49,11 @@ func (m *Model) setGraphResult(r query.Result) {
 }
 
 func (m *Model) graphView() bool {
-	return m.chart.enabled || m.opt.Graphics && m.opt.Ranged && len(m.table.Rows) == 0
+	return m.chart.enabled || m.opt.Graphics && m.opt.Ranged && len(m.table.Rows) == 0 && len(m.resultFilter.allRows) == 0
 }
 func (m *Model) hasVisibleSeries() bool {
-	for _, on := range m.chart.visible {
-		if on {
+	for row := range m.graphSeriesCount() {
+		if m.chart.visible[m.graphIndex(row)] {
 			return true
 		}
 	}
@@ -77,24 +77,27 @@ func (m *Model) graphPlace() placement {
 
 func (m *Model) legend() string {
 	g := &m.chart
-	if len(g.visible) == 0 {
+	count := m.graphSeriesCount()
+	if count == 0 {
 		return ""
 	}
 	var entries []string
 	width := 0
+	selected := m.graphRow()
 	// Keep the selected series first; further entries form a compact legend.
-	for n := 0; n < len(g.visible); n++ {
-		i := (g.selected + n) % len(g.visible)
+	for n := 0; n < count; n++ {
+		row := (selected + n) % count
+		i := m.graphIndex(row)
 		state := "●"
 		if !g.visible[i] {
 			state = "○"
 		}
 		entry := lipgloss.NewStyle().Foreground(lipgloss.Color(graph.Color(i))).Render(state) + " " + seriesName(g.result.Series[i])
 		if n == 0 {
-			entry = fmt.Sprintf("› %d/%d %s", i+1, len(g.visible), entry)
+			entry = fmt.Sprintf("› %d/%d %s", row+1, count, entry)
 		}
 		suffix := ""
-		if remaining := len(g.visible) - n - 1; remaining > 0 {
+		if remaining := count - n - 1; remaining > 0 {
 			suffix = fmt.Sprintf("  +%d more", remaining)
 		}
 		room := m.width - 2 - ansi.StringWidth(suffix) - width
@@ -109,7 +112,7 @@ func (m *Model) legend() string {
 		width += ansi.StringWidth(entry)
 	}
 	legend := strings.Join(entries, "")
-	if remaining := len(g.visible) - len(entries); remaining > 0 {
+	if remaining := count - len(entries); remaining > 0 {
 		legend += fmt.Sprintf("  +%d more", remaining)
 	}
 	return ansi.Truncate(legend, m.width-2, "…")
@@ -165,8 +168,9 @@ func (m *Model) syncGraph(msg tea.Msg) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	g.renderCancel = cancel
 	p := graph.Plot{Start: g.result.Start, End: g.result.End, Step: g.result.Step}
-	for i, on := range g.visible {
-		if on {
+	for row := range m.graphSeriesCount() {
+		i := m.graphIndex(row)
+		if g.visible[i] {
 			p.Lines = append(p.Lines, graph.Line{Index: i, Samples: g.result.Series[i].Samples})
 		}
 	}

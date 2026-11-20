@@ -45,6 +45,7 @@ func TestAlertRows(t *testing.T) {
 	rows[3].Status.SilencedBy, rows[3].Status.InhibitedBy = []string{"silence"}, []string{"parent"}
 	rows[4].Status.SilencedBy = []string{"silence"}
 	rows[1].Labels["cluster"] = "West-Prod"
+	rows[1].Annotations = map[string]string{"runbook": "Fleet recovery"}
 	a := newAlertsState()
 	for _, row := range rows {
 		a.rows = append(a.rows, newAlertRow("source", row))
@@ -73,9 +74,17 @@ func TestAlertRows(t *testing.T) {
 	if a.row != 4 {
 		t.Fatalf("sort lost selection: %d", a.row)
 	}
-	a.filter = "pRoD"
+	a.filter = "wStPrOd"
 	a.rebuild(a.selection(), a.row)
 	checkOrder("early")
+	for _, filter := range []string{"clstr", "rnbk", "flt rcvry"} {
+		a.filter = filter
+		a.rebuild(a.selection(), a.row)
+		checkOrder("early")
+	}
+	a.filter = "slncd"
+	a.rebuild(a.selection(), a.row)
+	checkOrder("both", "sil")
 	a.filter = "CRIT"
 	a.rebuild(a.selection(), a.row)
 	checkOrder("inhib", "late", "early")
@@ -169,8 +178,8 @@ func TestAlertsNavigationFilterAndOverlay(t *testing.T) {
 	if before != after {
 		t.Fatal("closing overlay did not restore table")
 	}
-	press(m, '/', '0', '3', 'q')
-	if m.quitting || m.activeTab != alertsTab || m.alerts.input.Value() != "03q" || len(m.alerts.visible) != 0 || m.alerts.cancel != nil {
+	press(m, '/', 'A', '-', '0', '3', 'q')
+	if m.quitting || m.activeTab != alertsTab || m.alerts.input.Value() != "A-03q" || len(m.alerts.visible) != 0 || m.alerts.cancel != nil {
 		t.Fatal("filter input did not behave as cached text editing")
 	}
 	press(m, tea.KeyBackspace)
@@ -179,7 +188,7 @@ func TestAlertsNavigationFilterAndOverlay(t *testing.T) {
 	}
 	pressAlt(m, '0')
 	pressAlt(m, '1')
-	if !m.alerts.input.Focused() || m.alerts.input.Value() != "03" {
+	if !m.alerts.input.Focused() || m.alerts.input.Value() != "A-03" {
 		t.Fatal("tab switch lost filter editing")
 	}
 	press(m, tea.KeyEsc)

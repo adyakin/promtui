@@ -219,8 +219,8 @@ Press `/` to enter filter mode.
 
 Requirements:
 
-- Case-insensitive substring matching.
-- Search across alert name, severity, instance and all label values.
+- Case-insensitive fuzzy matching: typed characters must occur in order within a field.
+- Search all alert fields, including state, label and annotation names and values, and receivers.
 - Update results interactively.
 - `Enter` applies the filter.
 - `Esc` cancels filter editing.

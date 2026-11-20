@@ -263,13 +263,10 @@ Display source status and target counts where practical.
 
 Press `/` to filter targets.
 
-Search case-insensitively across:
-
-- Source name
-- Job
-- Instance
-- Scrape URL
-- Target label names and values
+Search all target fields, including health, source, scrape URLs and errors,
+and the names and values of both final and discovered labels. Matching is
+case-insensitive and fuzzy within a field: both `DOW` and `dwn` match `DOWN`.
+`Enter` applies the filter; `Esc` cancels editing.
 
 Filtering must not trigger API requests.
 

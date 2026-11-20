@@ -69,14 +69,14 @@ func (m *Model) openSeries() {
 }
 
 func (m *Model) refreshSeries() {
-	text := strings.ToLower(m.seriesFilter)
+	filter := newFuzzyFilter(m.seriesFilter)
 	m.filtered = m.filtered[:0]
 	if m.chart.result.Start.IsZero() {
 		m.seriesRow = 0
 		return
 	}
 	for i, s := range m.chart.result.Series {
-		if strings.Contains(strings.ToLower(seriesName(s)), text) {
+		if matchesSeries(filter, s) {
 			m.filtered = append(m.filtered, i)
 		}
 	}
@@ -107,7 +107,7 @@ func (m *Model) isolateSeries() {
 
 func (m *Model) selectedSeries() query.Series {
 	if m.chart.enabled {
-		return m.chart.result.Series[m.chart.selected]
+		return m.chart.result.Series[m.graphIndex(m.graphRow())]
 	}
 	return m.table.Rows[m.table.Row]
 }
@@ -159,6 +159,8 @@ func (m *Model) helpBody() []string {
 			description = "Older or newer sample"
 		case "copyLabels":
 			description = "Copy selected labels"
+		case "filterResults":
+			description = "Filter by metric name or labels"
 		case "recall":
 			description = "Previous or next query"
 		case "newline":

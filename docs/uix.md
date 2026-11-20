@@ -192,6 +192,7 @@ Single-character shortcuts are active only in Results or appropriate overlays.
 | `Home / End` | First/last row |
 | `← / →` | Horizontal scroll |
 | `Enter` | Expand/collapse selected series |
+| `/` | Filter series by name or labels |
 | `n` | Sort by name |
 | `v` | Sort by value |
 | `y` | Copy selected value |
@@ -205,6 +206,7 @@ The selected row must remain visible when scrolling.
 |---|---|
 | `↑ / ↓` | Select previous/next series |
 | `s` | Open Series Selector |
+| `/` | Filter series by name or labels |
 | `Space` | Toggle selected series visibility |
 | `g` | Switch to Table |
 | `r` | Change time range |
@@ -213,6 +215,14 @@ The selected row must remain visible when scrolling.
 The selected series must be visibly identified before Space can toggle it.
 
 Do not silently toggle the first series when no selection is visible.
+
+In the table, graph, and Series Selector, `/` matches case-insensitively
+and in character order within a metric name, label key, or label value.
+Sample values and timestamps are not searched. `Enter` applies the filter
+and `Esc` cancels editing. In the graph, filtering hides nonmatching
+series without overwriting manual visibility settings. To clear a filter,
+open `/` again, erase the text, and press `Enter`.
+Running a new query clears the results filter.
 
 ---
 

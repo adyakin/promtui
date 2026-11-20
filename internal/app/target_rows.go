@@ -40,7 +40,7 @@ var targetSortNames = [...]string{"Health", "Source", "Job", "Instance", "Durati
 type targetRow struct {
 	api.Target
 	id, source, job, instance string
-	search                    string
+	search                    []string
 	health                    targetHealth
 	sourceIndex               int
 	lastScrape                time.Time
@@ -85,16 +85,12 @@ func makeTargetRows(source string, targets api.Targets) []targetRow {
 			} else {
 				first[base] = len(rows)
 			}
-			terms := []string{source, row.job, row.instance, item.ScrapeURL}
-			for k, v := range labels {
-				terms = append(terms, k, v, k+"="+v)
+			row.search = []string{source, targetHealthNames[row.health], item.Health, item.ScrapePool,
+				item.ScrapeURL, item.GlobalURL, item.LastError, item.LastScrape, item.ScrapeInterval, item.ScrapeTimeout}
+			if item.LastScrapeDuration != nil {
+				row.search = append(row.search, targetDuration(item.LastScrapeDuration),
+					strconv.FormatFloat(*item.LastScrapeDuration, 'f', -1, 64))
 			}
-			if dropped {
-				for k, v := range item.Labels {
-					terms = append(terms, k, v, k+"="+v)
-				}
-			}
-			row.search = strings.ToLower(strings.Join(terms, "\x00"))
 			rows = append(rows, row)
 		}
 	}
@@ -110,6 +106,10 @@ func makeTargetRows(source string, targets api.Targets) []targetRow {
 		}
 	}
 	return rows
+}
+
+func (r *targetRow) matches(f fuzzyFilter) bool {
+	return f.matches(r.search...) || matchLabels(f, r.Labels) || matchLabels(f, r.DiscoveredLabels)
 }
 
 func compareTargetRows(a, b *targetRow, order targetSort) int {

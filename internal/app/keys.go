@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/editor"
 	"promtui/internal/programstatus"
+	"promtui/internal/ui"
 )
 
 type keyScope uint16
@@ -59,6 +60,7 @@ var bindings = []binding{
 	{"series", "s", "s", "s Series", resultKeys},
 	{"range", "r", "r", "r Range", resultKeys},
 	{"quit", "q", "q", "q Quit", resultKeys},
+	{"filterResults", "/", "/", "/ Filter", resultKeys},
 	{"browseQueries", "ctrl+o", "Ctrl+O", "Ctrl+O Saved", resultKeys},
 	{"select", "up down", "↑ / ↓", "↑↓ Select", resultKeys | rangeKeys | seriesKeys},
 	{"toggle", "space", "Space", "Space Toggle", graphKeys | seriesKeys},
@@ -115,7 +117,7 @@ func (m *Model) mainScope() keyScope {
 
 func (m *Model) scope() keyScope {
 	switch {
-	case m.panel == seriesKeys && m.filtering:
+	case m.resultFilter.input.Focused() || m.panel == seriesKeys && m.filtering:
 		return filterKeys
 	case m.panel != 0:
 		return m.panel
@@ -136,10 +138,12 @@ func (m *Model) available(b binding, scope keyScope) bool {
 		return m.opt.Graphics
 	case "series":
 		return m.opt.Graphics && !m.chart.result.Start.IsZero() && len(m.chart.visible) > 0
+	case "filterResults":
+		return len(m.resultFilter.allRows) > 0
 	case "select", "toggle":
 		switch scope {
 		case graphKeys:
-			return m.width >= minWidth && m.height >= minHeight && len(m.chart.visible) > 0
+			return m.width >= minWidth && m.height >= minHeight && m.graphSeriesCount() > 0
 		case seriesKeys:
 			return len(m.filtered) > 0
 		case rangeKeys:
@@ -173,6 +177,9 @@ func (m *Model) available(b binding, scope keyScope) bool {
 	}
 	switch b.id {
 	case "select", "expand", "labels", "copy", "copyLabels", "sort", "page", "edge", "pan":
+		if scope == graphKeys {
+			return m.graphSeriesCount() > 0
+		}
 		return len(m.table.Rows) > 0
 	}
 	return true
@@ -220,6 +227,9 @@ func (m *Model) promQLFooter() string {
 		}
 		if b.id == "back" && (scope == labelKeys || scope == queryErrorKeys) {
 			hint = "Esc Close"
+		}
+		if b.id == "back" && scope == filterKeys && m.resultFilter.input.Focused() {
+			hint = "Esc Cancel"
 		}
 		if b.id == "scroll" && scope == queryErrorKeys && m.width < 27 {
 			hint = "↑↓"
@@ -309,6 +319,9 @@ func (m *Model) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 	case savedNameKeys, savedSearchKeys:
 		return m.editSavedInput(k), true
 	case historyKeys, filterKeys:
+		if m.resultFilter.input.Focused() {
+			return m.editResultFilter(k), true
+		}
 		if key == "backspace" {
 			m.editFilter("", true)
 		} else if k.Text != "" {
@@ -362,6 +375,16 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		case historyKeys:
 			m.dismiss()
 		case filterKeys:
+			if m.resultFilter.input.Focused() {
+				r := &m.resultFilter
+				r.input.Blur()
+				if r.input.Value() != r.before {
+					r.input.SetValue(r.before)
+					m.refreshResultFilter()
+				}
+				m.table, r.anchor = r.anchor, ui.Table{}
+				break
+			}
 			m.seriesFilter = m.filterDraft
 			m.refreshSeries()
 			m.filtering = false
@@ -399,7 +422,11 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	case "select":
 		switch scope {
 		case graphKeys:
-			m.chart.selected = min(max(0, m.chart.selected+delta), len(m.chart.visible)-1)
+			row := m.graphRow()
+			if m.graphIndex(row) == m.chart.selected {
+				row = min(max(0, row+delta), m.graphSeriesCount()-1)
+			}
+			m.chart.selected = m.graphIndex(row)
 		case seriesKeys:
 			m.seriesRow = min(max(0, m.seriesRow+delta), len(m.filtered)-1)
 			m.chart.selected = m.filtered[m.seriesRow]
@@ -412,6 +439,8 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		m.isolated = nil
 		if scope == seriesKeys {
 			m.chart.selected = m.filtered[m.seriesRow]
+		} else {
+			m.chart.selected = m.graphIndex(m.graphRow())
 		}
 		m.chart.visible[m.chart.selected] = !m.chart.visible[m.chart.selected]
 		m.chart.revision++
@@ -426,7 +455,17 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	case "filter":
 		m.filterDraft = m.seriesFilter
 		m.filtering = true
+	case "filterResults":
+		r := &m.resultFilter
+		r.before, r.anchor = r.input.Value(), m.table
+		r.input.CursorEnd()
+		return r.input.Focus()
 	case "finishFilter":
+		if m.resultFilter.input.Focused() {
+			m.resultFilter.input.Blur()
+			m.resultFilter.anchor = ui.Table{}
+			break
+		}
 		m.filtering = false
 	case "apply":
 		m.opt.Window = m.ranges[m.rangeRow]
@@ -444,7 +483,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		s := m.selectedSeries().Labels
 		if id == "copy" {
 			if scope == graphKeys {
-				row := m.chart.result.Series[m.chart.selected]
+				row := m.selectedSeries()
 				s = row.Samples[len(row.Samples)-1].Value.String()
 			} else {
 				_, s, _ = m.table.Fields(m.table.Row)
@@ -464,7 +503,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	case "sample":
 		m.table.Sample(delta)
 	case "sort":
-		m.table.Sort(key == "v")
+		m.sortResults(key == "v")
 	case "scroll":
 		step := 1
 		if scope == queryErrorKeys {
