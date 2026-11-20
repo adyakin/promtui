@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"slices"
 	"strings"
 	"time"
@@ -190,22 +191,13 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 		meta = renderPaneError(body, m.targetErrorRows(), a.errorOffset)
 	case len(a.visible) > 0:
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
-		body[2] = title.Render(targetColumns(width, "  ", [6]string{"Health", "Instance", "Job", "Source", "Last scrape", "Duration"}))
+		body[2] = title.Render(targetColumns(width, false, [6]string{"Health", "Instance", "Job", "Source", "Last scrape", "Duration"}))
 		room := m.targetPage()
 		first := min(max(0, a.row-room/2), max(0, len(a.visible)-room))
 		for i := first; i < min(first+room, len(a.visible)); i++ {
 			row := a.visible[i]
-			health := targetHealthNames[row.health]
-			prefix := "  "
-			if i == a.row {
-				prefix = "› "
-			}
-			line := targetColumns(width, prefix, [6]string{health, alertValue(row.instance), alertValue(row.job), row.source,
+			body[3+i-first] = targetColumns(width, i == a.row, [6]string{targetHealthNames[row.health], alertValue(row.instance), alertValue(row.job), row.source,
 				targetScrapeAge(row.lastScrape, now), targetDuration(row.LastScrapeDuration)})
-			if i == a.row {
-				line = selectedAlertStyle.Width(width).Render(line)
-			}
-			body[3+i-first] = line
 		}
 	case len(a.sources) != 0:
 		body[2] = "  No targets matching the current filter"
@@ -246,7 +238,7 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 	return base, cursor
 }
 
-func targetColumns(width int, prefix string, values [6]string) string {
+func targetColumns(width int, selected bool, values [6]string) string {
 	// The first two cells of each row hold the selection marker.
 	sizes := [6]int{8, 9, 8, 8, 11, 8}
 	used, count := 2+sizes[0], 1
@@ -259,11 +251,19 @@ func targetColumns(width int, prefix string, values [6]string) string {
 	if count > 1 {
 		sizes[1] += width - used
 	}
-	cells := make([]string, count)
-	for i := range cells {
-		cells[i] = alertColumn(values[i], sizes[i])
+	var after strings.Builder
+	for i := 1; i < count; i++ {
+		after.WriteString("  ")
+		after.WriteString(alertColumn(values[i], sizes[i]))
 	}
-	return prefix + strings.Join(cells, "  ")
+	var tint color.Color
+	switch values[0] {
+	case targetHealthNames[targetDown]:
+		tint = statusRed
+	case targetHealthNames[targetUnknown]:
+		tint = statusYellow
+	}
+	return renderStatusRow(width, selected, "", alertColumn(values[0], sizes[0]), after.String(), tint)
 }
 
 func targetScrapeAge(at, now time.Time) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"maps"
 	"slices"
 	"strings"
@@ -15,8 +16,6 @@ import (
 	"promtui/internal/alertmanager"
 	"promtui/internal/ui"
 )
-
-var selectedAlertStyle = lipgloss.NewStyle().Reverse(true)
 
 func (m *Model) alertsFooter() string {
 	a := &m.alerts
@@ -145,21 +144,13 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 		case len(a.visible) == 0:
 			body[2] = "  No matching alerts"
 		default:
-			body[2] = title.Render(alertColumns(width, "  ", "State", "Severity", "Alert", "Instance", "Duration"))
+			body[2] = title.Render(alertColumns(width, false, "State", "Severity", "Alert", "Instance", "Duration"))
 			room := m.alertPage()
 			first := min(max(0, a.row-room/2), max(0, len(a.visible)-room))
 			for i := first; i < min(first+room, len(a.visible)); i++ {
 				item := a.visible[i]
-				prefix := "  "
-				if i == a.row {
-					prefix = "› "
-				}
-				row := alertColumns(width, prefix, item.state(), alertValue(item.Labels["severity"]), alertValue(item.Labels["alertname"]),
+				body[3+i-first] = alertColumns(width, i == a.row, item.state(), alertValue(item.Labels["severity"]), alertValue(item.Labels["alertname"]),
 					alertValue(item.Labels["instance"]), alertDuration(item.StartsAt, now))
-				if i == a.row {
-					row = selectedAlertStyle.Width(width).Render(row)
-				}
-				body[3+i-first] = row
 			}
 		}
 	}
@@ -178,14 +169,15 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	return base, cursor
 }
 
-func alertColumns(width int, prefix, state, severity, name, instance, duration string) string {
+func alertColumns(width int, selected bool, state, severity, name, instance, duration string) string {
 	const separator = "  "
 	if width < 43 {
 		n := 11
 		if state == "Silenced + Inhibited" {
 			state = "Sil.+Inhib."
 		}
-		return prefix + alertColumn(state, n) + separator + ansi.Truncate(ui.Plain(name), width-2-n-len(separator), "…")
+		line := alertColumn(state, n) + separator + ansi.Truncate(ui.Plain(name), width-2-n-len(separator), "…")
+		return renderStatusRow(width, selected, line, "", "", nil)
 	}
 	stateWidth := 11
 	if width >= 76 {
@@ -196,8 +188,16 @@ func alertColumns(width int, prefix, state, severity, name, instance, duration s
 	const severityWidth, durationWidth = 8, 8
 	remaining := width - 2 - stateWidth - severityWidth - durationWidth - 4*len(separator)
 	instanceWidth := max(5, remaining*2/5)
-	return prefix + strings.Join([]string{alertColumn(state, stateWidth), alertColumn(severity, severityWidth),
-		alertColumn(name, remaining-instanceWidth), alertColumn(instance, instanceWidth), ansi.Truncate(duration, durationWidth, "…")}, separator)
+	var tint color.Color
+	switch strings.ToLower(severity) {
+	case "critical":
+		tint = statusRed
+	case "high":
+		tint = statusYellow
+	}
+	after := separator + strings.Join([]string{alertColumn(name, remaining-instanceWidth),
+		alertColumn(instance, instanceWidth), ansi.Truncate(duration, durationWidth, "…")}, separator)
+	return renderStatusRow(width, selected, alertColumn(state, stateWidth)+separator, alertColumn(severity, severityWidth), after, tint)
 }
 
 func alertColumn(s string, width int) string {
