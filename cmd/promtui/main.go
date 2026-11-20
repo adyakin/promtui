@@ -14,18 +14,18 @@ import (
 	"promtui/internal/history"
 )
 
+func defaultDirs(home string) (configDir, dataDir string) {
+	return filepath.Join(home, ".config", "promtui"),
+		filepath.Join(home, ".local", "share", "promtui")
+}
+
 func run() error {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return err
-	}
-	dir = filepath.Join(dir, "promtui")
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	dataDir := filepath.Join(home, ".local", "share", "promtui")
-	path := flag.String("config", "", "configuration file (.yaml, .yml, or .toml; default: first match in the user config directory under promtui/)")
+	dir, dataDir := defaultDirs(home)
+	path := flag.String("config", "", "configuration file (.yaml, .yml, or .toml; default: first match in ~/.config/promtui/)")
 	name := flag.String("connection", "", "configured connection name")
 	hist := flag.String("history", filepath.Join(dataDir, "history.jsonl"), "query history file")
 	window := flag.Duration("range", 0, "start in range mode, e.g. 15m or 168h")
