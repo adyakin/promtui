@@ -134,7 +134,7 @@ func TestShellLayoutAndFooterOnResize(t *testing.T) {
 		t.Fatal("Alerts is not highlighted or displays PromQL actions")
 	}
 	press(m, '2')
-	check([2]int{24, 10}, "╭─ › Targets", "Connection: q1q1", "Scrape Targets", "in a future", "milestone.", "0–2 Tabs")
+	check([2]int{24, 10}, "╭─ › Targets", "Missing target", "0–2 Tabs")
 	check([2]int{19, 6}, "Enlarge terminal", "0–2 Tabs")
 	press(m, '0')
 	press(m, 'i')
@@ -185,15 +185,15 @@ func TestShellClearsAndRestoresKittyPlacement(t *testing.T) {
 	_, render = m.Update(render()) // discard initial render invalidated by visibility change
 	_, upload := m.Update(render())
 
-	// Switch away with an upload already queued, then pick another placeholder.
+	// Switch away with an upload already queued, then pick another tab.
 	press(m, '1', '2')
 	_, clear := m.Update(upload())
 	if clear == nil || !strings.Contains(string(clear().(tea.RawMsg).Msg.(graphPacket)), "a=d") ||
-		strings.Contains(m.screen(), "Scrape Targets") {
+		strings.Contains(m.screen(), "Missing target configuration") {
 		t.Fatal("graph was not cleared before showing the destination")
 	}
-	if _, cmd := m.Update(clear()); cmd != nil || !strings.Contains(m.screen(), "Scrape Targets") {
-		t.Fatal("placeholder did not become visible after graph cleanup")
+	if _, cmd := m.Update(clear()); cmd != nil || !strings.Contains(m.screen(), "Missing target configuration") {
+		t.Fatal("Targets did not become visible after graph cleanup")
 	}
 	if _, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30}); cmd != nil {
 		t.Fatal("inactive tab attempted to render a graph")

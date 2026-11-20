@@ -47,6 +47,7 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 			URL                string    `yaml:"url"`
 			AlertmanagerURL    string    `yaml:"alertmanager_url"`
 			InsecureSkipVerify yaml.Node `yaml:"insecure_skip_verify"`
+			Targets            yaml.Node `yaml:"targets"`
 		}
 		for j := 0; j < len(value.Content); j += 2 {
 			field := value.Content[j]
@@ -55,7 +56,7 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 				if value.Content[j+1].ShortTag() != "!!str" {
 					return fmt.Errorf("connection %q: line %d: %s must be a string", key.Value, field.Line, field.Value)
 				}
-			case "insecure_skip_verify":
+			case "insecure_skip_verify", "targets":
 			default:
 				return fmt.Errorf("connection %q: line %d: unknown field %q", key.Value, field.Line, field.Value)
 			}
@@ -67,11 +68,50 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("connection %q: %w", key.Value, err)
 		}
+		targets, err := yamlTargets(fields.Targets)
+		if err != nil {
+			return fmt.Errorf("connection %q: %w", key.Value, err)
+		}
 		*c = append(*c, rawConnection{
-			Name: key.Value, URL: fields.URL, AlertmanagerURL: fields.AlertmanagerURL, InsecureSkipVerify: override,
+			Name: key.Value, URL: fields.URL, AlertmanagerURL: fields.AlertmanagerURL, InsecureSkipVerify: override, Targets: targets,
 		})
 	}
 	return nil
+}
+
+func yamlTargets(node yaml.Node) ([]TargetSource, error) {
+	if node.Kind == 0 {
+		return nil, nil
+	}
+	if node.Kind == yaml.AliasNode {
+		node = *node.Alias
+	}
+	if node.Kind != yaml.SequenceNode || len(node.Content) == 0 {
+		return nil, fmt.Errorf("line %d: targets must be a nonempty list of named sources", node.Line)
+	}
+	for _, source := range node.Content {
+		if source.Kind == yaml.AliasNode {
+			source = source.Alias
+		}
+		if source.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("line %d: target source must be a mapping", source.Line)
+		}
+		for i := 0; i < len(source.Content); i += 2 {
+			key, value := source.Content[i], source.Content[i+1]
+			if key.Value != "name" && key.Value != "url" {
+				return nil, fmt.Errorf("line %d: unknown target source field %q", key.Line, key.Value)
+			}
+			if value.Kind == yaml.AliasNode {
+				value = value.Alias
+			}
+			if value.ShortTag() != "!!str" {
+				return nil, fmt.Errorf("line %d: target source %s must be a string", value.Line, key.Value)
+			}
+		}
+	}
+	var sources []TargetSource
+	err := node.Decode(&sources)
+	return sources, err
 }
 
 func yamlTLS(node yaml.Node) (*bool, error) {

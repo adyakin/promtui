@@ -15,6 +15,12 @@ type Connection struct {
 	Name, URL          string
 	AlertmanagerURL    string
 	InsecureSkipVerify bool
+	Targets            []TargetSource
+}
+
+type TargetSource struct {
+	Name string `yaml:"name"`
+	URL  string `yaml:"url"`
 }
 
 type generalSettings struct {
@@ -39,10 +45,11 @@ type Config struct {
 }
 
 type rawConnection struct {
-	Name               string `toml:"name"`
-	URL                string `toml:"url"`
-	AlertmanagerURL    string `toml:"alertmanager_url"`
-	InsecureSkipVerify *bool  `toml:"insecure_skip_verify"`
+	Name               string         `toml:"name"`
+	URL                string         `toml:"url"`
+	AlertmanagerURL    string         `toml:"alertmanager_url"`
+	InsecureSkipVerify *bool          `toml:"insecure_skip_verify"`
+	Targets            []TargetSource `toml:"-"`
 }
 
 func defaults() settings {
@@ -127,12 +134,24 @@ func resolve(s settings, insecure bool, raw []rawConnection) (Config, error) {
 		if conn.AlertmanagerURL != "" && !validBaseURL(conn.AlertmanagerURL) {
 			return c, fmt.Errorf("connection %q: alertmanager_url must be an HTTP(S) base URL without credentials, query or fragment", conn.Name)
 		}
+		names := make(map[string]bool, len(conn.Targets))
+		for i := range conn.Targets {
+			source := &conn.Targets[i]
+			source.Name = strings.TrimSpace(source.Name)
+			if source.Name == "" || names[source.Name] {
+				return c, fmt.Errorf("connection %q: missing or duplicate target source name %q", conn.Name, source.Name)
+			}
+			if !validBaseURL(source.URL) {
+				return c, fmt.Errorf("connection %q: target source %q url must be an HTTP(S) base URL without credentials, query or fragment", conn.Name, source.Name)
+			}
+			names[source.Name] = true
+		}
 		skipVerify := insecure
 		if conn.InsecureSkipVerify != nil {
 			skipVerify = *conn.InsecureSkipVerify
 		}
 		c.Connections = append(c.Connections, Connection{
-			Name: conn.Name, URL: conn.URL, AlertmanagerURL: conn.AlertmanagerURL, InsecureSkipVerify: skipVerify,
+			Name: conn.Name, URL: conn.URL, AlertmanagerURL: conn.AlertmanagerURL, InsecureSkipVerify: skipVerify, Targets: conn.Targets,
 		})
 		seen[conn.Name] = true
 	}

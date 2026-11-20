@@ -44,7 +44,8 @@ type Model struct {
 	shellState
 	promQLState
 	alerts      alertsState
-	httpClients map[config.Connection]*http.Client
+	targets     targetsState
+	httpClients map[bool]*http.Client
 }
 
 type promQLState struct {
@@ -70,7 +71,7 @@ func New(o Options, entries []history.Entry) *Model {
 	e.Prompt = "│ "
 	e.CharLimit = 65536
 	e.MaxWidth = 0
-	m := &Model{alerts: newAlertsState(), promQLState: promQLState{
+	m := &Model{alerts: newAlertsState(), targets: newTargetsState(o.Connection), promQLState: promQLState{
 		opt: o, entries: entries, cursor: -1, editor: e, status: "Ready", summary: "No query executed",
 	}}
 	m.resize(80, 24)
@@ -81,6 +82,7 @@ func (m *Model) resize(w, h int) {
 	m.editor.SetWidth(max(8, w-2))
 	m.editor.SetHeight(max(1, min(6, h/4, h-9)))
 	m.alerts.input.SetWidth(max(1, w-13))
+	m.targets.input.SetWidth(max(1, w-13))
 }
 func (m *Model) Init() tea.Cmd {
 	if m.opt.ProbeGraphics {
@@ -181,6 +183,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case targetsCompleted:
+		return m, m.onTargetsCompleted(v, time.Now())
+	case targetsTick:
+		return m, m.onTargetsTick(time.Time(v))
+	case targetLabelsCopied:
+		if m.targets.dialog == targetDetails && m.targets.dialogID == v.dialogID {
+			m.targets.copyStatus = "Copied labels"
+			if v.err != nil {
+				m.targets.copyStatus = "Could not copy labels"
+			}
+		}
+		return m, nil
 	case alertsCompleted:
 		return m, m.onAlertsCompleted(v, time.Now())
 	case alertsTick:
@@ -254,6 +268,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if !m.quitting && m.activeTab == alertsTab && m.alerts.input.Focused() {
 			return m, m.alerts.edit(v)
+		}
+		if !m.quitting && m.activeTab == targetsTab && m.targets.input.Focused() {
+			return m, m.targets.edit(v)
 		}
 		if m.quitting || m.activeTab != promQLTab {
 			return m, nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,12 +37,12 @@ func TestConnectionPickerPreservesEditor(t *testing.T) {
 	press(m, tea.KeyUp, '2', tea.KeyTab)
 	m.Update(tea.PasteMsg{Content: "discard"})
 	press(m, tea.KeyEsc)
-	if m.opt.Connection != prod || m.activeTab != promQLTab {
+	if !reflect.DeepEqual(m.opt.Connection, prod) || m.activeTab != promQLTab {
 		t.Fatal("cancel switched the connection or tab")
 	}
 	pressAlt(m, 'c')
 	press(m, tea.KeyUp, tea.KeyEnter)
-	if m.opt.Connection != dev || m.pickingConnection || m.cancel != nil || m.View().Cursor == nil ||
+	if !reflect.DeepEqual(m.opt.Connection, dev) || m.pickingConnection || m.cancel != nil || m.View().Cursor == nil ||
 		m.editor.Value() != draft || editor.Position(m.editor) != pos {
 		t.Fatal(m.screen())
 	}
@@ -79,7 +80,7 @@ func TestConnectionPickerIsSharedAcrossTabs(t *testing.T) {
 		t.Fatal(s)
 	}
 	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd == nil || m.activeTab != alertsTab || m.opt.Connection != next || ctx.Err() == nil || m.cache != nil {
+	if cmd == nil || m.activeTab != alertsTab || !reflect.DeepEqual(m.opt.Connection, next) || ctx.Err() == nil || m.cache != nil {
 		t.Fatal("switch did not reset old backend state and refresh Alerts")
 	}
 	if msg, ok := cmd().(alertsCompleted); !ok || msg.err != nil {
@@ -104,7 +105,7 @@ func TestConnectionPickerIsSharedAcrossTabs(t *testing.T) {
 		t.Fatalf("unexpected PromQL response: %#v", msg)
 	}
 	press(m, 'c', tea.KeyUp, tea.KeyEnter)
-	if m.opt.Connection != old || m.editor.Value() != "up" {
+	if !reflect.DeepEqual(m.opt.Connection, old) || m.editor.Value() != "up" {
 		t.Fatal("switching from PromQL results did not preserve the query")
 	}
 }

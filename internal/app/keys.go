@@ -275,6 +275,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		m.dismiss()
 		m.stop()
 		m.alerts.stop()
+		m.targets.stop(nil)
 		m.quitting = true
 	case "run":
 		m.dismiss()

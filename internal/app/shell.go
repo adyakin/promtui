@@ -19,12 +19,10 @@ const (
 	targetsTab
 )
 
-var tabs = [...]struct {
-	name, heading, description string
-}{
-	promQLTab:  {name: "PromQL"},
-	alertsTab:  {name: "Alerts"},
-	targetsTab: {"Targets", "Scrape Targets", "Target exploration will be implemented in a future milestone."},
+var tabs = [...]string{
+	promQLTab:  "PromQL",
+	alertsTab:  "Alerts",
+	targetsTab: "Targets",
 }
 
 type shellState struct {
@@ -36,11 +34,12 @@ type shellState struct {
 }
 
 func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
+	targetModal := m.activeTab == targetsTab && m.targets.dialog != noTargetDialog
 	if len(m.opt.Connections) > 0 {
 		switch k := key.Keystroke(); {
 		case m.pickingConnection && k != "ctrl+q" && k != "ctrl+c":
 			return m.connectionKey(k), true
-		case !m.pickingConnection && (k == "alt+c" || k == "c" && !m.textInputFocused()):
+		case !m.pickingConnection && !targetModal && (k == "alt+c" || k == "c" && !m.textInputFocused()):
 			m.openConnections()
 			return nil, true
 		}
@@ -52,9 +51,16 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 				if m.activeTab == alertsTab {
 					m.alerts.stop()
 				}
+				if m.activeTab == targetsTab {
+					m.targets.stop(nil)
+					m.targets.dialog = noTargetDialog
+				}
 				m.activeTab = next
 				if next == alertsTab {
 					return m.alertsOnEntry(time.Now()), true
+				}
+				if next == targetsTab {
+					return m.targetsOnEntry(time.Now()), true
 				}
 			}
 			return nil, true
@@ -62,6 +68,11 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 	switch key.String() {
 	case "ctrl+c":
+		if m.activeTab == targetsTab && m.targets.cancel != nil {
+			m.targets.stop(errTargetsCancelled)
+			m.targets.lastDone = time.Now()
+			return m.scheduleTargetsTick(m.targets.lastDone), true
+		}
 		if m.activeTab == alertsTab && m.alerts.cancel != nil {
 			m.alerts.stop()
 			m.alerts.err = errAlertsCancelled
@@ -71,23 +82,22 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 		return m.act("cancelOrQuit", "", 0), true
 	case "ctrl+q":
 		return m.act("quit", "", 0), true
-	case "q":
-		if m.activeTab == targetsTab {
-			return m.act("quit", "", 0), true
-		}
 	}
 	if m.activeTab == alertsTab {
 		return m.alertsKey(key), true
 	}
-	return nil, m.activeTab == targetsTab
+	if m.activeTab == targetsTab {
+		return m.targetsKey(key), true
+	}
+	return nil, false
 }
 
 func (m *Model) textInputFocused() bool {
 	if m.activeTab == alertsTab {
 		return m.alerts.input.Focused()
 	}
-	if m.activeTab != promQLTab {
-		return false
+	if m.activeTab == targetsTab {
+		return m.targets.input.Focused()
 	}
 	switch m.scope() {
 	case editKeys, completionKeys, historyKeys, filterKeys:
@@ -106,14 +116,7 @@ func (m *Model) footer() string {
 	if m.activeTab == alertsTab {
 		return m.alertsFooter()
 	}
-	hints := []string{"0–2 Tabs", "q Quit"}
-	if len(m.opt.Connections) > 0 {
-		hints = append([]string{m.connectionHint()}, hints...)
-	}
-	if m.cancel != nil {
-		hints = append(hints, "Ctrl+C Cancel")
-	}
-	return m.formatFooter(hints, "", "   ")
+	return m.targetsFooter()
 }
 
 var activeTabStyle = lipgloss.NewStyle().Bold(true).
@@ -124,7 +127,7 @@ func (m *Model) header(active tabID, statuses ...string) string {
 	bar := func(compact bool) string {
 		var s strings.Builder
 		for i, tab := range tabs {
-			label := fmt.Sprintf(" %d %s ", i, tab.name)
+			label := fmt.Sprintf(" %d %s ", i, tab)
 			if compact {
 				label = fmt.Sprintf(" %d ", i)
 			}
@@ -190,22 +193,6 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 		screen, cursor := m.alertsScreen(time.Now())
 		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
 	}
-	tab := tabs[m.activeTab]
-	rows := make([]string, m.height-4)
-	wrapped := strings.Split(ansi.Wrap(tab.description, m.width-4, ""), "\n")
-	top, gap := 1, 1
-	if len(wrapped)+4 > len(rows) {
-		top = 0
-	}
-	if len(wrapped)+3 > len(rows) {
-		gap = 0
-	}
-	rows[top] = "  " + title.Render(tab.heading)
-	rows[top+1] = "  Connection: " + ui.Plain(m.opt.Connection.Name)
-	start := top + 2 + gap
-	for i, line := range wrapped[:min(len(wrapped), len(rows)-start)] {
-		rows[start+i] = "  " + line
-	}
-	screen := strings.Join([]string{m.header(m.activeTab), frame(tab.name, "", rows, m.width, true), m.footer()}, "\n")
-	return m.withConnectionPicker(screen, nil, workspace{resultY: 1, bottomY: m.height - 3})
+	screen, cursor := m.targetsScreen(time.Now())
+	return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
 }

@@ -28,13 +28,34 @@ requires a Prometheus or VictoriaMetrics `url` and can have an optional
 `alertmanager_url`. Both are HTTP(S) base URLs without credentials, query
 strings, or fragments. Path prefixes are supported.
 
+## Scrape target sources
+
+The Targets tab uses the connection `url` by default. If that URL only serves
+queries, such as a VictoriaMetrics `vmselect` endpoint, set `targets` on the
+YAML connection to a nonempty list of named Prometheus or vmagent base URLs:
+
+```yaml
+connections:
+  cluster:
+    url: http://vmselect:8481/select/0/prometheus
+    targets:
+      - {name: east, url: "https://monitoring.example.org/vmagent-east"}
+      - {name: west, url: "https://monitoring.example.org/vmagent-west"}
+```
+
+Names must be unique within a connection. Each source uses the same HTTP(S)
+base URL rules, including support for reverse-proxy path prefixes. Configuring
+`targets` replaces the fallback, rather than adding to it. Existing TOML
+configurations continue to use the connection URL for Targets.
+
 ## TLS verification
 
 HTTPS certificates are verified by default. In either format, the top-level
 `insecure_skip_verify` applies to all connections unless the connection sets its
 own value. An explicit `false` overrides a global `true`, just as a connection's
 `true` overrides a global `false`. The effective value applies to PromQL queries,
-editor suggestions, and Alertmanager for that connection only.
+editor suggestions, Alertmanager, and every target source for that connection.
+Target sources do not have their own TLS overrides.
 
 Use `true` only when you knowingly accept the risk of an unverified endpoint:
 it allows impersonation of the HTTPS server.

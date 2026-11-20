@@ -23,6 +23,8 @@ func TestConnectionTLS(t *testing.T) {
 			fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
 		case "/alerts/api/v2/alerts":
 			fmt.Fprint(w, `[]`)
+		case "/agent-a/api/v1/targets", "/agent-b/api/v1/targets":
+			fmt.Fprint(w, `{"status":"success","data":{"activeTargets":[]}}`)
 		default:
 			t.Errorf("unexpected request: %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -46,6 +48,7 @@ func TestConnectionTLS(t *testing.T) {
 			} {
 				body += fmt.Sprintf("  %s:\n    url: %s/metrics\n    alertmanager_url: %s/alerts\n%s",
 					conn.name, server.URL, server.URL, conn.override)
+				body += fmt.Sprintf("    targets:\n      - {name: a, url: %s/agent-a}\n      - {name: b, url: %s/agent-b}\n", server.URL, server.URL)
 			}
 			path := filepath.Join(t.TempDir(), "config.yaml")
 			if err := os.WriteFile(path, []byte(body), 0600); err != nil {
@@ -70,6 +73,14 @@ func TestConnectionTLS(t *testing.T) {
 				var untrusted x509.UnknownAuthorityError
 				if !want && (!errors.As(queryErr, &untrusted) || alertsErr == nil) {
 					t.Errorf("%s should reject the certificate: query = %v, alerts = %v", m.opt.Connection.Name, queryErr, alertsErr)
+				}
+				m.activeTab = targetsTab
+				for _, cmd := range targetCommands(m.refreshTargets()) {
+					msg := cmd().(targetsCompleted)
+					if want && msg.err != nil || !want && !errors.As(msg.err, &untrusted) {
+						t.Errorf("%s source %d TLS error = %v (accept = %v)", m.opt.Connection.Name, msg.source, msg.err, want)
+					}
+					m.onTargetsCompleted(msg, time.Now())
 				}
 			}
 		})
