@@ -91,17 +91,12 @@ func View(e textarea.Model, width int) (rows []string, cursorX, cursorY int) {
 			if style == 0 {
 				style = 7
 			}
-			if off+j == pos && e.Focused() {
-				style += 16
-			}
 			if style != last {
-				fmt.Fprintf(&b, "\x1b[0;%dm", 30+style%16%8)
-				if style%16 >= 8 {
-					fmt.Fprintf(&b, "\x1b[%dm", 90+style%8)
+				base := 30
+				if style >= 8 {
+					base = 90
 				}
-				if style >= 16 {
-					b.WriteString("\x1b[7m")
-				}
+				fmt.Fprintf(&b, "\x1b[0;%dm", base+style%8)
 				last = style
 			}
 			if unicode.IsControl(r) {

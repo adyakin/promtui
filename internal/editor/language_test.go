@@ -21,6 +21,23 @@ func TestMetricPhrase(t *testing.T) {
 	}
 }
 
+func TestMetricPhraseAfterTrailingSpace(t *testing.T) {
+	const phrase = "node cpu load"
+	const suffix = " \t[5m])"
+	s := "rate(" + phrase + suffix
+	c := At(s, strings.IndexByte(s, '['))
+	got := c.Filter([]string{"node_cpu_load_average", "node_load1", "node_load_cpu"})
+	if c.Prefix != phrase || !slices.Equal(got, []string{"node_cpu_load_average"}) ||
+		s[:c.Start]+got[0]+s[c.End:] != "rate(node_cpu_load_average"+suffix {
+		t.Fatal(c, got)
+	}
+	for _, input := range []string{"node ", "up or node ", "node cpu\n", "node cpu # note "} {
+		if c := At(input, len(input)); c.Prefix != "" {
+			t.Fatalf("unexpected phrase for %q: %+v", input, c)
+		}
+	}
+}
+
 func TestIncompleteContext(t *testing.T) {
 	for _, tc := range []struct{ input, kind, metric, label, prefix string }{
 		{`sum(rate(nod|e_cpu[5m]))`, "expr", "", "", "nod"},

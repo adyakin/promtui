@@ -91,7 +91,7 @@ Focus management is one of the most important aspects of the interface.
 - Application starts with the Query Editor focused.
 - `Tab` and `Shift+Tab` switch between Query Editor and Results.
 - `i` in Results is an alias for returning to the Query Editor.
-- Executing a query preserves the current focus.
+- Running a query focuses Results immediately; the response does not change focus.
 - Opening an overlay temporarily captures focus.
 - Closing an overlay restores the previous focus.
 - Focus must be visually obvious.
@@ -141,12 +141,10 @@ Global shortcuts must work regardless of the focused component, except where a t
 | `Ctrl+Enter` | Execute query, if supported |
 | `F1` | Context-sensitive help |
 | `Ctrl+Q` | Quit application |
-| `Ctrl+C` | Cancel active query |
+| `Ctrl+C` | Cancel active query, or quit if idle |
 | `Esc` | Context-dependent Back/Close |
 
-`Ctrl+C` must not unexpectedly quit the application.
-
-When no request is active, `Ctrl+C` should have no destructive effect.
+While a query is running, `Ctrl+C` cancels it without quitting. Press `Ctrl+C` again to quit.
 
 If `Ctrl+Enter` cannot be reliably detected in Rex, `F5` remains the primary execution shortcut.
 
@@ -173,10 +171,10 @@ History navigation must preserve an unfinished query so it can be restored.
 | Key | Action |
 |---|---|
 | `Tab` / `Shift+Tab` / `i` | Focus Query Editor |
-| `g` | Toggle Table/Graph |
+| `g` | Run a range query in Graph |
 | `s` | Open Series Selector |
-| `r` | Open Time-Range Selector |
-| `t` | Toggle Instant/Range |
+| `r` | Choose a time range; Enter applies it and reruns |
+| `t` | Run an instant query in Table |
 | `l` | Show selected series labels |
 | `y` | Copy selected value |
 | `?` | Help |
@@ -245,13 +243,13 @@ F5 Run   Tab Results   ^R History   ^Space Complete   F1 Help
 ### 5.3 Example: Graph
 
 ```text
-Tab Query   g Table   s Series   r Range   q Quit   t Mode   ? Help
+Tab Query   g Graph   t Table   s Series   r Range   q Quit   ? Help
 ```
 
 ### 5.4 Example: Table
 
 ```text
-Tab Query   g Graph   r Range   q Quit   ↑↓ Select   Enter Expand
+Tab Query   g Graph   t Table   r Range   q Quit   ↑↓ Select   Enter Expand
 ```
 
 ### 5.5 Example: Series Selector
@@ -320,7 +318,7 @@ The main screen should prioritize the PromQL editor and query results.
 │ ● server01  ● server02  ● server03   +3 more         │
 ├─────────────────────────────────────────────────────┤
 │ Done · 85ms · 6 series                               │
-│ Tab Query   g Table   s Series   r Range   q Quit   │
+│ Tab Query   g Graph   t Table   r Range   q Quit    │
 └─────────────────────────────────────────────────────┘
 ```
 

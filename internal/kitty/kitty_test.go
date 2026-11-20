@@ -9,8 +9,8 @@ import (
 
 func TestChunkedPlacement(t *testing.T) {
 	png := bytes.Repeat([]byte("test"), 3000)
-	s := Frame(png, BaseID, 4, 80, 16)
-	if !strings.HasPrefix(s, "\x1b7\x1b[4;1H") || !strings.HasSuffix(s, Delete(BaseID+1)+"\x1b8") {
+	s := Frame(png, BaseID, 4, 2, 80, 16)
+	if !strings.HasPrefix(s, "\x1b7\x1b[4;2H") || !strings.HasSuffix(s, Delete(BaseID+1)+"\x1b8") {
 		t.Fatal("cursor or cleanup")
 	}
 	chunks := strings.Split(s, "\x1b_G")[1:]
@@ -24,7 +24,7 @@ func TestChunkedPlacement(t *testing.T) {
 		if len(data) > 4096 || strings.Contains(h, "m=0") != (i == len(chunks)-2) {
 			t.Fatal(h, len(data))
 		}
-		if i == 0 && !strings.Contains(h, "c=80,r=16,C=1") {
+		if i == 0 && (!strings.Contains(h, "c=80,r=16,C=1") || !strings.Contains(h, "z=-2147483648")) {
 			t.Fatal(h)
 		}
 		payload += data

@@ -16,7 +16,7 @@ import (
 	"promtui/internal/query"
 )
 
-type placement struct{ revision, row, cols, rows, cw, ch int }
+type placement struct{ revision, row, col, cols, rows, cw, ch int }
 type graphFrame struct {
 	key    placement
 	packet string
@@ -25,7 +25,7 @@ type graphFrame struct {
 type graphPacket string
 type graphState struct {
 	result                     query.Result
-	enabled, preferTable       bool
+	enabled                    bool
 	selected, revision, cw, ch int
 	visible                    []bool
 	wanted, displayed, failed  placement
@@ -37,10 +37,11 @@ type graphState struct {
 
 func (m *Model) setGraphResult(r query.Result) {
 	g := &m.chart
+	m.isolated = nil
 	g.revision++
 	g.result = r
 	g.selected = 0
-	g.enabled = m.opt.Graphics && !r.Start.IsZero() && !g.preferTable
+	g.enabled = m.opt.Graphics && !r.Start.IsZero()
 	g.visible = make([]bool, len(r.Series))
 	for i := range g.visible {
 		g.visible[i] = i < 8
@@ -56,17 +57,18 @@ func (m *Model) hasVisibleSeries() bool {
 }
 func (m *Model) graphPlace() placement {
 	g := &m.chart
-	if !g.enabled || m.quitting || m.scope()&mainKeys == 0 || !m.hasVisibleSeries() {
+	if !g.enabled || m.quitting || m.panel&(helpKeys|detailKeys) != 0 || m.popup || m.searching ||
+		!m.hasVisibleSeries() || m.width < minWidth || m.height < minHeight {
 		return placement{}
 	}
-	// The image starts on the first result row (Kitty uses 1-based positions)
-	// and leaves the legend, status and shortcuts beneath it.
-	row := m.resultTop() + 1
-	rows := m.height - m.resultTop() - 3
-	if rows < 5 || m.width < 32 {
+	w := m.workspace()
+	// Keep the raster inside the frame and above the legend. Floating
+	// dialogs paint opaque cells above the image without moving it.
+	rows, cols := w.bottomY-w.bodyY-1, m.width-2
+	if rows < 5 || cols < 32 {
 		return placement{}
 	}
-	return placement{g.revision, row, m.width, rows, g.cw, g.ch}
+	return placement{g.revision, w.bodyY + 1, 2, cols, rows, g.cw, g.ch}
 }
 
 func (m *Model) legend() string {
@@ -91,7 +93,7 @@ func (m *Model) legend() string {
 		if remaining := len(g.visible) - n - 1; remaining > 0 {
 			suffix = fmt.Sprintf("  +%d more", remaining)
 		}
-		room := m.width - ansi.StringWidth(suffix) - width
+		room := m.width - 2 - ansi.StringWidth(suffix) - width
 		if n > 0 {
 			entry = "  " + entry
 		}
@@ -106,7 +108,7 @@ func (m *Model) legend() string {
 	if remaining := len(g.visible) - len(entries); remaining > 0 {
 		legend += fmt.Sprintf("  +%d more", remaining)
 	}
-	return ansi.Truncate(legend, m.width, "…")
+	return ansi.Truncate(legend, m.width-2, "…")
 }
 
 // One render and one raw write at a time. RawMsg comes back through Update
@@ -147,7 +149,8 @@ func (m *Model) syncGraph(msg tea.Msg) tea.Cmd {
 	if g.sending {
 		return nil
 	}
-	if g.displayed.cols != 0 && (k.cols == 0 || g.failed == k || k.row != g.displayed.row || k.rows != g.displayed.rows || k.cols != g.displayed.cols) {
+	if g.displayed.cols != 0 && (k.cols == 0 || g.failed == k || k.row != g.displayed.row ||
+		k.col != g.displayed.col || k.rows != g.displayed.rows || k.cols != g.displayed.cols) {
 		g.displayed = placement{}
 		g.sending = true
 		return tea.Raw(graphPacket(kitty.Clear()))
@@ -183,7 +186,7 @@ func (m *Model) syncGraph(msg tea.Msg) tea.Cmd {
 		data, err := p.Render(ctx, int(w*scale), int(h*scale), float64(ch)*.75*scale)
 		f := graphFrame{key: k, err: err}
 		if err == nil {
-			f.packet = kitty.Frame(data, id, k.row, k.cols, k.rows)
+			f.packet = kitty.Frame(data, id, k.row, k.col, k.cols, k.rows)
 		}
 		return f
 	}

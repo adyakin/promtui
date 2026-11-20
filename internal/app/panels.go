@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"promtui/internal/graph"
 	"promtui/internal/query"
 	"promtui/internal/ui"
 )
@@ -20,7 +21,12 @@ type panels struct {
 	filtering                 bool
 	seriesFilter, filterDraft string
 	labelText                 string
+	labelFields               []labelField
+	isolated                  []bool
+	isolatedIndex             int
 }
+
+const dialogKeys = rangeKeys | seriesKeys | labelKeys
 
 func (m *Model) openPanel(scope keyScope) {
 	m.dismiss()
@@ -46,13 +52,6 @@ func (m *Model) openRange() {
 		slices.Sort(m.ranges)
 	}
 	m.rangeRow = max(0, slices.Index(m.ranges, m.opt.Window))
-}
-
-func (m *Model) settingsChanged() {
-	m.status = "Query settings updated · F5 to run"
-	if m.cancel != nil {
-		m.status = "Running previous settings… · F5 to rerun"
-	}
 }
 
 func seriesName(s query.Series) string {
@@ -81,16 +80,56 @@ func (m *Model) refreshSeries() {
 		}
 	}
 	m.seriesRow = max(0, slices.Index(m.filtered, m.chart.selected))
-	if len(m.filtered) > 0 {
-		m.chart.selected = m.filtered[m.seriesRow]
+}
+
+func (m *Model) willRestoreSeries() bool {
+	return m.isolated != nil && len(m.filtered) > 0 && m.filtered[m.seriesRow] == m.isolatedIndex
+}
+
+func (m *Model) isolateSeries() {
+	index := m.filtered[m.seriesRow]
+	m.chart.selected = index
+	if m.willRestoreSeries() {
+		copy(m.chart.visible, m.isolated)
+		m.isolated = nil
+	} else {
+		if m.isolated == nil {
+			m.isolated = slices.Clone(m.chart.visible)
+		}
+		m.isolatedIndex = index
+		for i := range m.chart.visible {
+			m.chart.visible[i] = i == index
+		}
+	}
+	m.chart.revision++
+}
+
+func (m *Model) selectedSeries() query.Series {
+	if m.chart.enabled {
+		return m.chart.result.Series[m.chart.selected]
+	}
+	return m.table.Rows[m.table.Row]
+}
+
+type labelField struct{ name, value string }
+
+func (m *Model) openLabels() {
+	m.openPanel(labelKeys)
+	s := m.selectedSeries()
+	m.labelText = s.Labels
+	m.labelFields = m.labelFields[:0]
+	for name, value := range s.Metric {
+		m.labelFields = append(m.labelFields, labelField{ui.Plain(string(name)), ui.Plain(string(value))})
+	}
+	slices.SortFunc(m.labelFields, func(a, b labelField) int { return strings.Compare(a.name, b.name) })
+	// Allow a formatted-only result to be inspected as well.
+	if len(m.labelFields) == 0 && s.Labels != "" && s.Labels != "{}" {
+		m.labelFields = append(m.labelFields, labelField{value: ui.Plain(s.Labels)})
 	}
 }
 
-func (m *Model) selectedLabels() string {
-	if m.chart.enabled {
-		return m.chart.result.Series[m.chart.selected].Labels
-	}
-	return m.table.Rows[m.table.Row].Labels
+func (m *Model) canCopyLabels() bool {
+	return m.labelText != "" && m.labelText != "{}"
 }
 
 func (m *Model) helpBody() []string {
@@ -120,10 +159,14 @@ func (m *Model) helpBody() []string {
 			description = "Previous or next query"
 		case "newline":
 			description = "Insert newline"
-		case "legacyView":
-			description = "Toggle table/graph"
-		case "mode":
-			description = "Toggle instant/range"
+		case "legacyView", "mode":
+			description = "Switch between instant and range and rerun"
+		case "graph":
+			description = "Run a range query and show Graph"
+		case "table":
+			description = "Run an instant query and show Table"
+		case "cancelOrQuit":
+			description = "Cancel active query, or quit if idle"
 		case "quit":
 			description = "Quit PromTUI"
 		}
@@ -146,12 +189,6 @@ func (m *Model) panelBody() []string {
 				lines = append(lines, ui.Plain(s))
 			}
 		}
-	case labelKeys:
-		text := m.labelText
-		if text == "" || text == "{}" {
-			text = "No labels"
-		}
-		lines = []string{ui.Plain(text)}
 	}
 	return strings.Split(ansi.Hardwrap(strings.Join(lines, "\n"), m.width, false), "\n")
 }
@@ -159,7 +196,6 @@ func (m *Model) panelBody() []string {
 func (m *Model) panelView() string {
 	names := map[keyScope]string{
 		helpKeys: "Help · Query editor", detailKeys: "Request status",
-		labelKeys: "Series labels", rangeKeys: "Time range", seriesKeys: "Series selector",
 	}
 	name := names[m.panel]
 	if m.panel == helpKeys {
@@ -173,55 +209,147 @@ func (m *Model) panelView() string {
 	header := lipgloss.NewStyle().Bold(true).Reverse(true).Width(m.width)
 	clip := func(s string) string { return ansi.Truncate(ui.Plain(s), m.width, "…") }
 	lines := []string{header.Render(clip(" " + name))}
-	row := func(text string, selected bool) {
-		prefix := "  "
-		if selected {
-			prefix = "› "
-		}
-		line := clip(prefix + text)
-		if selected {
-			line = lipgloss.NewStyle().Reverse(true).Width(m.width).Render(line)
-		}
-		lines = append(lines, line)
+	body := m.panelBody()
+	start := min(m.offset, max(0, len(body)-m.height+2))
+	lines = append(lines, body[start:min(len(body), start+m.height-2)]...)
+	for len(lines) < m.height-1 {
+		lines = append(lines, "")
+	}
+	return strings.Join(append(lines, m.footer()), "\n")
+}
+
+type dialogBounds struct{ x, y, width, height int }
+
+func (m *Model) dialogBounds(w workspace) dialogBounds {
+	if m.width < minWidth || m.height < minHeight {
+		return dialogBounds{}
+	}
+	resultHeight := w.bottomY - w.resultY + 1
+	centered := func(width, height int) dialogBounds {
+		width = min(width, m.width-2)
+		height = min(height, resultHeight)
+		return dialogBounds{(m.width - width) / 2, w.resultY + (resultHeight-height)/2, width, height}
 	}
 	switch m.panel {
 	case rangeKeys:
-		for i, d := range m.ranges {
-			text := windowLabel(d)
-			if m.opt.Ranged && d == m.opt.Window {
+		width := 30
+		for _, d := range m.ranges {
+			width = max(width, ansi.StringWidth(windowLabel(d))+17)
+		}
+		return centered(min(40, width), len(m.ranges)+2)
+	case seriesKeys:
+		width := min(m.width-2, max(22, (m.width*2+4)/5))
+		height := max(1, len(m.filtered)) + 2
+		minHeight := 3
+		if m.filtering || m.seriesFilter != "" {
+			height++
+			minHeight++
+		}
+		// On short terminals move the dialog up enough for its frame,
+		// filter, and at least one selectable item.
+		maxHeight := max(minHeight, (resultHeight*7+5)/10)
+		height = min(height, maxHeight)
+		y := min(w.resultY+1, w.bottomY-height+1)
+		return dialogBounds{m.width - width - 1, y, width, height}
+	case labelKeys:
+		name, value := 0, 0
+		for _, f := range m.labelFields {
+			name = max(name, ansi.StringWidth(f.name))
+			value = max(value, ansi.StringWidth(f.value))
+		}
+		width := min(72, max(22, name+value+8))
+		height := min(max(3, (resultHeight*7+5)/10), max(1, len(m.labelFields))+2)
+		return centered(width, height)
+	}
+	return dialogBounds{}
+}
+
+var dialogSurface = lipgloss.NewStyle().
+	Background(lipgloss.Color("#303844")).Foreground(lipgloss.Color("#e0e8f0"))
+
+func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
+	d := m.dialogBounds(w)
+	if d.width == 0 {
+		return nil
+	}
+	inner := d.width - 2
+	var name string
+	var lines []string
+	row := func(text, swatch string, selected bool) {
+		prefix := "   "
+		style := dialogSurface
+		if selected {
+			prefix = " › "
+			style = style.Bold(true).Background(lipgloss.Color("#465972")).Foreground(lipgloss.Color("15"))
+		}
+		if swatch != "" {
+			prefix = style.Render(prefix) + style.Foreground(lipgloss.Color(swatch)).Render("■") + style.Render(" ")
+		} else {
+			prefix = style.Render(prefix)
+		}
+		room := inner - ansi.StringWidth(prefix) - 1
+		lines = append(lines, prefix+style.Width(room).Render(ansi.Truncate(text, room, "…"))+style.Render(" "))
+	}
+	start := func(selected, count, room int) int {
+		return min(max(0, selected-room/2), max(0, count-room))
+	}
+
+	switch m.panel {
+	case rangeKeys:
+		name = "Time range"
+		room := d.height - 2
+		first := start(m.rangeRow, len(m.ranges), room)
+		for i := first; i < min(first+room, len(m.ranges)); i++ {
+			window := m.ranges[i]
+			text := windowLabel(window)
+			if m.opt.Ranged && window == m.opt.Window {
 				text += " (current)"
 			}
-			row(text, i == m.rangeRow)
+			row(text, "", i == m.rangeRow)
 		}
-		lines = append(lines, clip("  Apply sets range mode. F5 runs the query."))
 	case seriesKeys:
+		name = "Series selector"
 		if m.filtering || m.seriesFilter != "" {
 			input := "  Filter: " + m.seriesFilter
 			if m.filtering {
 				input += " ▏"
 			}
-			lines = append(lines, clip(input))
+			lines = append(lines, dialogSurface.Render(input))
 		}
 		if len(m.filtered) == 0 {
-			lines = append(lines, "  No matching series")
+			lines = append(lines, dialogSurface.Render("  No matching series"))
 		}
-		room := m.height - len(lines) - 1
-		first := max(0, m.seriesRow-room+1)
+		room := d.height - len(lines) - 2
+		first := start(m.seriesRow, len(m.filtered), room)
 		for i := first; i < min(first+room, len(m.filtered)); i++ {
 			index := m.filtered[i]
-			state := "○ Hidden"
+			state := "[ ]"
 			if m.chart.visible[index] {
-				state = "● Shown "
+				state = "[x]"
 			}
-			row(state+"  "+seriesName(m.chart.result.Series[index]), i == m.seriesRow)
+			row(state+" "+seriesName(m.chart.result.Series[index]), graph.Color(index), i == m.seriesRow)
 		}
-	default:
-		body := m.panelBody()
-		start := min(m.offset, max(0, len(body)-m.height+2))
-		lines = append(lines, body[start:min(len(body), start+m.height-2)]...)
+	case labelKeys:
+		name = "Series labels"
+		if len(m.labelFields) == 0 {
+			row("No labels", "", false)
+			break
+		}
+		room := d.height - 2
+		first := start(m.offset, len(m.labelFields), room)
+		nameWidth := 0
+		for _, f := range m.labelFields {
+			nameWidth = max(nameWidth, min(inner/3, ansi.StringWidth(f.name)))
+		}
+		for i := first; i < min(first+room, len(m.labelFields)); i++ {
+			f := m.labelFields[i]
+			text := f.value
+			if nameWidth > 0 {
+				key := ansi.Truncate(f.name, nameWidth, "…")
+				text = key + strings.Repeat(" ", nameWidth-ansi.StringWidth(key)+2) + text
+			}
+			row(text, "", i == m.offset)
+		}
 	}
-	for len(lines) < m.height-1 {
-		lines = append(lines, "")
-	}
-	return strings.Join(append(lines, m.footer()), "\n")
+	return lipgloss.NewLayer(renderFrame(name, "", lines, d.width, true, dialogSurface)).X(d.x).Y(d.y).Z(1)
 }

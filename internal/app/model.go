@@ -70,8 +70,8 @@ func New(o Options, entries []history.Entry) *Model {
 }
 func (m *Model) resize(w, h int) {
 	m.width, m.height = w, h
-	m.editor.SetWidth(max(8, w))
-	m.editor.SetHeight(max(1, min(6, h/4)))
+	m.editor.SetWidth(max(8, w-2))
+	m.editor.SetHeight(max(1, min(6, h/4, h-9)))
 }
 func (m *Model) Init() tea.Cmd {
 	if m.opt.ProbeGraphics {
@@ -99,6 +99,16 @@ func (m *Model) stop() {
 		m.id++
 	}
 }
+
+func (m *Model) runMode(ranged bool) tea.Cmd {
+	m.dismiss()
+	m.opt.Ranged = ranged
+	if ranged && m.opt.Window <= 0 {
+		m.opt.Window = time.Hour
+	}
+	return m.run()
+}
+
 func (m *Model) run() tea.Cmd {
 	expr := strings.TrimSpace(m.editor.Value())
 	if expr == "" {
@@ -170,7 +180,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if string(v.Payload) == "OK" {
 				m.opt.Graphics = true
 				m.chart.cw, m.chart.ch = kitty.CellSize()
-				m.chart.enabled = !m.chart.result.Start.IsZero() && !m.chart.preferTable
+				m.chart.enabled = !m.chart.result.Start.IsZero()
 			}
 		}
 		return m, nil
@@ -247,18 +257,36 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, cmd
 }
-func (m *Model) resultTop() int {
-	rows := 3 + min(m.editor.LineCount(), m.editor.Height())
-	if m.notice != "" {
-		rows++
-	}
-	if m.showDiagnostic() {
-		rows++
-	}
-	return rows
+
+type workspace struct {
+	resultY, bodyY, bottomY int
+	diagnostic, notice      bool
 }
+
+func (m *Model) workspace() workspace {
+	editorRows := min(m.editor.LineCount(), m.editor.Height())
+	// Reserve one body row for Results, in addition to the two frames,
+	// their gutter, the header, status and footer.
+	spare := m.height - 9 - editorRows
+	w := workspace{resultY: 4 + editorRows, bottomY: m.height - 3}
+	if spare > 0 && m.showDiagnostic() {
+		w.diagnostic = true
+		w.resultY++
+		spare--
+	}
+	w.bodyY = w.resultY + 1
+	if spare > 0 && m.notice != "" {
+		w.notice = true
+		w.bodyY++
+	}
+	return w
+}
+
 func (m *Model) page() int {
-	return max(1, m.height-m.resultTop()-3)
+	w := m.workspace()
+	// Match the table viewport, excluding its column-heading row.
+	room := w.bottomY - w.bodyY
+	return max(1, room-1)
 }
 func (m *Model) showDiagnostic() bool {
 	return m.diagnostic != "" && !(m.popup && m.context.Kind == "value")
@@ -266,25 +294,76 @@ func (m *Model) showDiagnostic() bool {
 
 var title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 
+// A frame occupies exactly width cells, including its two side borders.
+func frame(name, meta string, rows []string, width int, active bool) string {
+	return renderFrame(name, meta, rows, width, active, lipgloss.NewStyle())
+}
+
+func renderFrame(name, meta string, rows []string, width int, active bool, surface lipgloss.Style) string {
+	border := surface.Foreground(lipgloss.Color("8"))
+	heading := border
+	if active {
+		border = surface.Foreground(lipgloss.Color("6"))
+		heading = border.Bold(true)
+		name = "› " + name
+	}
+	label := ansi.Truncate(" "+name, width-4, "…")
+	if ansi.StringWidth(label) < width-4 {
+		label += " "
+	}
+	rule := width - 3 - ansi.StringWidth(label)
+	top := border.Render("╭─") + heading.Render(label)
+	if meta != "" && ansi.StringWidth(meta)+3 <= rule {
+		meta = " " + meta + " "
+		rule -= ansi.StringWidth(meta)
+	} else {
+		meta = ""
+	}
+	top += border.Render(strings.Repeat("─", rule)) + heading.Render(meta) + border.Render("╮")
+	lines := []string{top}
+	edge := border.Render("│")
+	for _, row := range rows {
+		row = ansi.Truncate(row, width-2, "…")
+		lines = append(lines, edge+row+surface.Render(strings.Repeat(" ", width-2-ansi.StringWidth(row)))+edge)
+	}
+	lines = append(lines, border.Render("╰"+strings.Repeat("─", width-2)+"╯"))
+	return strings.Join(lines, "\n")
+}
+
 const minWidth, minHeight = 24, 10
 
 func (m *Model) View() tea.View {
-	v := tea.NewView(m.screen())
+	content, cursor := m.renderScreen()
+	v := tea.NewView(content)
 	v.AltScreen = true
+	v.Cursor = cursor
 	return v
 }
 func (m *Model) screen() string {
+	content, _ := m.renderScreen()
+	return content
+}
+
+// Bubble Tea v2.0.6 encodes Shape -1 with Blink false as style 0, the
+// same value it uses for a hidden cursor. Switching focus or exiting
+// therefore emits no cursor-style escape, preserving the terminal's setting.
+func nativeCursor(x, y int) *tea.Cursor {
+	return &tea.Cursor{Position: tea.Position{X: x, Y: y}, Shape: -1}
+}
+
+func (m *Model) renderScreen() (string, *tea.Cursor) {
 	if m.width < minWidth || m.height < minHeight {
 		lines := make([]string, max(1, m.height))
 		lines[0] = ansi.Truncate("Enlarge terminal (24×10)", m.width, "…")
 		if len(lines) > 1 {
 			lines[len(lines)-1] = m.footer()
 		}
-		return strings.Join(lines, "\n")
+		return strings.Join(lines, "\n"), nil
 	}
-	if m.panel != 0 {
-		return m.panelView()
+	if m.panel != 0 && m.panel&dialogKeys == 0 {
+		return m.panelView(), nil
 	}
+	w := m.workspace()
 	mode := "Instant"
 	if m.opt.Ranged {
 		mode = "Range · " + windowLabel(m.opt.Window)
@@ -300,22 +379,7 @@ func (m *Model) screen() string {
 		mode = "Range · " + strings.TrimPrefix(windowLabel(m.opt.Window), "Last ") + " UTC"
 	}
 	clip := func(s string) string { return ansi.Truncate(ui.Plain(s), m.width, "…") }
-	section := func(name, meta string, active bool) string {
-		mark, rule := "  ", "─"
-		if active {
-			mark, rule = "› ", "━"
-		}
-		s := clip(mark + name + " ")
-		if meta != "" && ansi.StringWidth(s)+ansi.StringWidth(meta)+3 <= m.width {
-			s += strings.Repeat(rule, m.width-ansi.StringWidth(s)-ansi.StringWidth(meta)-2) + " " + meta + " "
-		} else {
-			s += strings.Repeat(rule, max(0, m.width-ansi.StringWidth(s)))
-		}
-		if active {
-			return title.Render(s)
-		}
-		return s
-	}
+	inner := m.width - 2
 	status := m.status
 	if m.historyError != "" {
 		status = m.historyError + " · " + status
@@ -330,11 +394,9 @@ func (m *Model) screen() string {
 	if gap < 2 {
 		header = ansi.Truncate(left, max(1, m.width-ansi.StringWidth(mode)-2), "…") + "  " + mode
 	}
-	lines := []string{head.Render(clip(header)), section("Query", "F5 Run", m.editor.Focused() && !m.popup && !m.searching)}
-	rows, x, y := editor.View(m.editor, m.width)
-	lines = append(lines, rows...)
-	if m.showDiagnostic() {
-		lines = append(lines, clip("PromQL: "+m.diagnostic))
+	queryRows, x, y := editor.View(m.editor, inner)
+	if w.diagnostic {
+		queryRows = append(queryRows, " PromQL: "+ui.Plain(m.diagnostic))
 	}
 	name, meta := "Results · Table", ""
 	if m.chart.enabled {
@@ -343,43 +405,46 @@ func (m *Model) screen() string {
 	if m.summary != "No query executed" {
 		meta = fmt.Sprintf("%d series", len(m.table.Rows))
 	}
-	lines = append(lines, section(name, meta, !m.editor.Focused()))
-	if m.notice != "" {
-		lines = append(lines, clip("Notice: "+m.notice))
+	var resultRows []string
+	if w.notice {
+		resultRows = append(resultRows, " Notice: "+ui.Plain(m.notice))
 	}
-	room := m.height - len(lines) - 2
-	if room > 0 {
-		switch {
-		case m.summary == "No query executed":
-			lines = append(lines, clip("  Run a query with F5."))
-		case len(m.table.Rows) == 0:
-			lines = append(lines, clip("  No matching series."))
-		case m.chart.enabled:
-			if m.chart.err != "" && len(lines) < m.height-3 {
-				lines = append(lines, clip("  "+m.chart.err))
-			} else if !m.popup && !m.searching && len(lines) < m.height-3 {
-				switch {
-				case !m.hasVisibleSeries():
-					lines = append(lines, clip("  No visible series. Use the series selector."))
-				case m.graphPlace().cols == 0:
-					lines = append(lines, clip("  Enlarge terminal to see the graph."))
-				}
+	room := w.bottomY - w.bodyY
+	body := make([]string, room)
+	switch {
+	case m.summary == "No query executed":
+		body[0] = "  Run with Ctrl+Enter."
+	case len(m.table.Rows) == 0:
+		body[0] = "  No matching series."
+	case m.chart.enabled:
+		if room > 1 {
+			switch {
+			case m.chart.err != "":
+				body[0] = "  " + ui.Plain(m.chart.err)
+			case !m.hasVisibleSeries():
+				body[0] = "  No visible series. Use the series selector."
+			case m.panel == 0 && !m.popup && !m.searching && m.graphPlace().cols == 0:
+				body[0] = "  Enlarge terminal to see the graph."
 			}
-			for len(lines) < m.height-3 {
-				lines = append(lines, "")
-			}
-			lines = append(lines, m.legend())
-		default:
-			lines = append(lines, strings.Split(m.table.View(m.width, room), "\n")...)
+		}
+		body[room-1] = m.legend()
+	default:
+		copy(body, strings.Split(m.table.View(inner, room), "\n"))
+	}
+	base := strings.Join([]string{head.Render(clip(header)),
+		frame("Query", runHint, queryRows, m.width, m.scope() == editKeys), "",
+		frame(name, meta, append(resultRows, body...), m.width, m.scope()&resultKeys != 0),
+		clip(" " + status), m.footer()}, "\n")
+	if m.popup || m.searching {
+		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.menu(1+x, 3+y)).Render(), nil
+	}
+	if m.panel&dialogKeys != 0 {
+		if dialog := m.dialogLayer(w); dialog != nil {
+			return lipgloss.NewCompositor(lipgloss.NewLayer(base), dialog).Render(), nil
 		}
 	}
-	for len(lines) < m.height-2 {
-		lines = append(lines, "")
+	if m.scope() == editKeys && !m.quitting {
+		return base, nativeCursor(1+x, 2+y) // left border, then header and top border
 	}
-	lines = append(lines, clip(" "+status), m.footer())
-	base := strings.Join(lines, "\n")
-	if m.popup || m.searching {
-		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.menu(x, 3+y)).Render()
-	}
-	return base
+	return base, nil
 }

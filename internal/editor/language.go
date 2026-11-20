@@ -76,7 +76,7 @@ func At(s string, pos int) Context {
 	var stack []string
 	var last, prev string
 	ts := scan(s)
-	current := -1
+	current, previous := -1, -1
 	for i, t := range ts {
 		if t.Start >= pos {
 			break
@@ -133,6 +133,7 @@ func At(s string, pos int) Context {
 			}
 		}
 		prev, last = last, v
+		previous = i
 	}
 	if len(stack) > 0 {
 		switch stack[len(stack)-1] {
@@ -147,19 +148,39 @@ func At(s string, pos int) Context {
 	}
 	// Adjacent identifiers aren't valid PromQL. Treat them as search terms
 	// while editing, stopping at operators, keywords and line boundaries.
-	if c.Kind == "expr" && current >= 0 && ident(c.Prefix) && !slices.Contains(words, c.Prefix) {
-		for i := current - 1; i >= 0; i-- {
-			t := ts[i]
-			gap := s[t.End:c.Start]
-			if !ident(t.Text) || slices.Contains(words, t.Text) || gap == "" || strings.Trim(gap, " \t") != "" {
-				break
+	if c.Kind == "expr" {
+		switch {
+		case current >= 0 && ident(c.Prefix) && !slices.Contains(words, c.Prefix):
+			c.Start = phraseStart(s, ts, current)
+			c.Prefix = s[c.Start:pos]
+		case current < 0 && previous >= 0 && ident(last) && !slices.Contains(words, last):
+			// While the user pauses after a space, keep a multi-term search
+			// available without capturing the space or the next token.
+			t := ts[previous]
+			if horizontalGap(s[t.End:pos]) {
+				if start := phraseStart(s, ts, previous); start < t.Start {
+					c.Start, c.End, c.Prefix = start, t.End, s[start:t.End]
+				}
 			}
-			c.Start = t.Start
 		}
-		c.Prefix = s[c.Start:pos]
 	}
 	return c
 }
+
+func horizontalGap(gap string) bool { return gap != "" && strings.Trim(gap, " \t") == "" }
+
+func phraseStart(s string, ts []Token, current int) int {
+	start := ts[current].Start
+	for i := current - 1; i >= 0; i-- {
+		t := ts[i]
+		if !ident(t.Text) || slices.Contains(words, t.Text) || !horizontalGap(s[t.End:start]) {
+			break
+		}
+		start = t.Start
+	}
+	return start
+}
+
 func (c Context) Local() []string {
 	var values []string
 	switch c.Kind {

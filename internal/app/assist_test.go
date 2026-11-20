@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
@@ -11,6 +14,49 @@ import (
 	"promtui/internal/editor"
 	"promtui/internal/history"
 )
+
+func TestCompleteFuzzyMetricPhrase(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/label/__name__/values" || r.URL.Query().Get("match[]") != `{__name__=~"node.*cpu.*load.*"}` {
+			t.Errorf("unexpected metadata request: %s", r.URL)
+		}
+		fmt.Fprint(w, `{"status":"success","data":["node_cpu_load_average","node_cpu_guest_load_average"]}`)
+	}))
+	defer server.Close()
+	for _, tc := range []struct {
+		input tea.Msg
+		draft string
+		want  string
+	}{
+		{tea.PasteMsg{Content: "node cpu load"}, "", "node_cpu_load_average"},
+		{tea.KeyPressMsg{Code: ' ', Mod: tea.ModCtrl}, "node cpu load ", "node_cpu_load_average "},
+	} {
+		m := New(Options{Connection: config.Connection{URL: server.URL}}, nil)
+		m.editor.SetValue(tc.draft)
+		_, analyze := m.Update(tc.input)
+		msg := analyze()
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, cmd := range batch {
+				if a, ok := cmd().(analysisMsg); ok {
+					msg = a
+					break
+				}
+			}
+		}
+		_, fetch := m.Update(msg)
+		if fetch == nil {
+			t.Fatalf("no metadata lookup for %q: %T", m.editor.Value(), msg)
+		}
+		m.Update(fetch())
+		if !m.popup || !slices.Equal(m.options, []string{"node_cpu_load_average", "node_cpu_guest_load_average"}) {
+			t.Fatal(m.options)
+		}
+		press(m, tea.KeyTab)
+		if m.editor.Value() != tc.want || m.popup || !m.editor.Focused() {
+			t.Fatal("Tab did not complete the whole phrase", m.editor.Value())
+		}
+	}
+}
 
 func TestMidTokenAcceptance(t *testing.T) {
 	m := New(Options{}, nil)

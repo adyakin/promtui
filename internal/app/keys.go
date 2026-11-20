@@ -35,36 +35,39 @@ type binding struct {
 	scope                 keyScope
 }
 
+const runHint = "Ctrl+Enter Run"
+
 // Order is footer priority. Actions without a hint are listed only in Help.
 var bindings = []binding{
-	{"run", "f5 ctrl+enter ctrl+g", "F5 / Ctrl+Enter / Ctrl+G", "F5 Run", editKeys | completionKeys},
+	{"run", "f5 ctrl+enter ctrl+g", "Ctrl+Enter / F5 / Ctrl+G", runHint, editKeys | completionKeys},
 	{"results", "tab shift+tab", "Tab / Shift+Tab", "Tab Results", editKeys},
 	{"history", "ctrl+r", "Ctrl+R", "Ctrl+R History", editKeys | completionKeys},
 	{"complete", "ctrl+space ctrl+@", "Ctrl+Space", "Ctrl+Space Complete", editKeys | completionKeys},
-	{"edit", "tab shift+tab i", "Tab / Shift+Tab / i", "Tab Query", resultKeys},
-	{"view", "g", "g", "g Graph", tableKeys},
-	{"view", "g", "g", "g Table", graphKeys},
+	{"edit", "tab shift+tab", "Tab / Shift+Tab", "Tab Query", resultKeys},
+	{"graph", "g", "g", "g Graph", resultKeys},
+	{"table", "t", "t", "t Table", resultKeys},
 	{"series", "s", "s", "s Series", resultKeys},
 	{"range", "r", "r", "r Range", resultKeys},
 	{"quit", "q", "q", "q Quit", resultKeys},
+	{"edit", "i", "i", "i Edit", resultKeys},
 	{"select", "up down", "↑ / ↓", "↑↓ Select", resultKeys | rangeKeys | seriesKeys},
 	{"toggle", "space", "Space", "Space Toggle", graphKeys | seriesKeys},
 	{"expand", "enter", "Enter", "Enter Expand", tableKeys},
 	{"sort", "n v", "n / v", "n/v Sort", tableKeys},
-	{"mode", "t", "t", "t Mode", resultKeys},
 	{"labels", "l", "l", "l Labels", resultKeys},
 	{"copy", "y", "y", "y Copy", resultKeys},
-	{"run", "f5 ctrl+enter ctrl+g", "F5 / Ctrl+Enter / Ctrl+G", "F5 Run", resultKeys},
+	{"run", "f5 ctrl+enter ctrl+g", "Ctrl+Enter / F5 / Ctrl+G", runHint, resultKeys},
 	{"accept", "tab", "Tab", "Tab Accept", completionKeys},
 	{"restore", "enter", "Enter", "Enter Restore", historyKeys},
-	{"apply", "enter", "Enter", "Enter Apply", rangeKeys},
+	{"apply", "enter", "Enter", "Enter Run", rangeKeys},
 	{"isolate", "enter", "Enter", "Enter Isolate", seriesKeys},
 	{"all", "a", "a", "a All", seriesKeys},
 	{"filter", "/", "/", "/ Filter", seriesKeys},
 	{"finishFilter", "enter", "Enter", "Enter Done", filterKeys},
 	{"selectAssist", "up down", "↑ / ↓", "↑↓ Select", completionKeys | historyKeys},
+	{"inspectCopy", "y", "y", "y Copy labels", labelKeys},
 	{"scroll", "up down pgup pgdown", "↑ / ↓ / PgUp / PgDn", "↑↓ Scroll", scrollKeys},
-	{"cancel", "ctrl+c", "Ctrl+C", "Ctrl+C Cancel", allKeys},
+	{"cancelOrQuit", "ctrl+c", "Ctrl+C", "Ctrl+C Quit", allKeys},
 	{"back", "esc", "Esc", "Esc Back", allKeys &^ mainKeys},
 	{"help", "f1", "F1", "F1 Help", editKeys | completionKeys},
 	{"help", "f1 ?", "F1 / ?", "? Help", resultKeys},
@@ -110,10 +113,8 @@ func (m *Model) scope() keyScope {
 
 func (m *Model) available(b binding, scope keyScope) bool {
 	switch b.id {
-	case "cancel":
-		return m.cancel != nil
-	case "view", "legacyView":
-		return m.opt.Graphics && !m.chart.result.Start.IsZero()
+	case "graph", "legacyView":
+		return m.opt.Graphics
 	case "series":
 		return m.opt.Graphics && !m.chart.result.Start.IsZero() && len(m.chart.visible) > 0
 	case "select", "toggle":
@@ -132,7 +133,12 @@ func (m *Model) available(b binding, scope keyScope) bool {
 	case "accept", "restore", "selectAssist":
 		return len(m.options) > 0
 	case "scroll":
+		if scope == labelKeys {
+			return len(m.labelFields) > 1
+		}
 		return len(m.panelBody()) > m.height-2
+	case "inspectCopy":
+		return m.canCopyLabels()
 	case "sample":
 		return len(m.table.Rows) > 0 && len(m.table.Rows[m.table.Row].Samples) > 1
 	}
@@ -147,14 +153,37 @@ func (m *Model) footer() string {
 	scope := m.scope()
 	var hints []string
 	width, reserved := 1, ""
+	gap := "   "
+	compact := scope == editKeys && m.width < 1+len(runHint)+len(gap)+len("Tab Results")
+	if compact {
+		gap = "  "
+	}
 	for _, b := range bindings {
 		if b.scope&scope == 0 || b.hint == "" || !m.available(b, scope) ||
 			scope == completionKeys && (b.id == "run" || b.id == "history" || b.id == "complete" || b.id == "help") {
 			continue
 		}
 		hint := b.hint
+		if b.id == "cancelOrQuit" {
+			if m.cancel != nil {
+				hint = "Ctrl+C Cancel"
+			} else if scope != editKeys {
+				continue // Results already shows q Quit; overlays show their own actions.
+			} else {
+				hint = "^C Quit"
+			}
+		}
+		if compact && b.id == "run" {
+			hint = "^Enter Run"
+		}
 		if b.id == "expand" && m.table.Expanded {
 			hint = "Enter Collapse"
+		}
+		if b.id == "isolate" && m.willRestoreSeries() {
+			hint = "Enter Restore"
+		}
+		if b.id == "back" && scope == labelKeys {
+			hint = "Esc Close"
 		}
 		if b.id == "back" {
 			reserved = hint
@@ -164,23 +193,23 @@ func (m *Model) footer() string {
 	}
 	budget := m.width
 	if reserved != "" {
-		budget -= ansi.StringWidth(reserved) + 3
+		budget -= ansi.StringWidth(reserved) + len(gap)
 	}
 	var visible []string
 	add := func(hint string) {
 		key, label, _ := strings.Cut(hint, " ")
-		visible = append(visible, lipgloss.NewStyle().Bold(true).Render(key)+" "+label)
+		visible = append(visible, title.Render(key)+" "+label)
 	}
 	for _, hint := range hints {
 		if w := ansi.StringWidth(hint); width+w <= budget {
 			add(hint)
-			width += w + 3
+			width += w + len(gap)
 		}
 	}
 	if reserved != "" && width+ansi.StringWidth(reserved) <= m.width {
 		add(reserved)
 	}
-	return lipgloss.NewStyle().Width(m.width).Reverse(true).Render(" " + strings.Join(visible, "   "))
+	return lipgloss.NewStyle().Width(m.width).Render(ansi.Truncate(" "+strings.Join(visible, gap), m.width, ""))
 }
 
 func (m *Model) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
@@ -222,16 +251,24 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		delta = -1
 	}
 	switch id {
+	case "cancelOrQuit":
+		if m.cancel != nil {
+			m.stop()
+			m.status = "Cancelled"
+			break
+		}
+		fallthrough
 	case "quit":
 		m.dismiss()
 		m.stop()
 		m.quitting = true
-	case "cancel":
-		m.stop()
-		m.status = "Cancelled"
 	case "run":
 		m.dismiss()
-		return m.run()
+		cmd := m.run()
+		if cmd != nil {
+			m.editor.Blur()
+		}
+		return cmd
 	case "results":
 		m.dismiss()
 		m.editor.Blur()
@@ -253,12 +290,12 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		m.openPanel(helpKeys)
 	case "status":
 		m.openPanel(detailKeys)
-	case "view", "legacyView":
-		m.chart.enabled = !m.chart.enabled
-		m.chart.preferTable = !m.chart.enabled
-	case "mode":
-		m.opt.Ranged = !m.opt.Ranged
-		m.settingsChanged()
+	case "graph":
+		return m.runMode(true)
+	case "table":
+		return m.runMode(false)
+	case "mode", "legacyView":
+		return m.runMode(!m.opt.Ranged)
 	case "range":
 		m.openRange()
 	case "series":
@@ -276,11 +313,18 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 			m.table.Move(delta)
 		}
 	case "toggle":
+		m.isolated = nil
+		if scope == seriesKeys {
+			m.chart.selected = m.filtered[m.seriesRow]
+		}
 		m.chart.visible[m.chart.selected] = !m.chart.visible[m.chart.selected]
 		m.chart.revision++
-	case "isolate", "all":
+	case "isolate":
+		m.isolateSeries()
+	case "all":
+		m.isolated = nil
 		for i := range m.chart.visible {
-			m.chart.visible[i] = id == "all" || i == m.chart.selected
+			m.chart.visible[i] = true
 		}
 		m.chart.revision++
 	case "filter":
@@ -289,17 +333,18 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	case "finishFilter":
 		m.filtering = false
 	case "apply":
-		m.opt.Window, m.opt.Ranged = m.ranges[m.rangeRow], true
+		m.opt.Window = m.ranges[m.rangeRow]
 		m.panel = 0
-		m.settingsChanged()
+		return m.runMode(true)
 	case "expand":
 		m.table.Expanded = !m.table.Expanded
 		m.table.X = 0
 	case "labels":
-		m.openPanel(labelKeys)
-		m.labelText = m.selectedLabels()
+		m.openLabels()
+	case "inspectCopy":
+		return copyText(m.labelText)
 	case "copy", "copyLabels":
-		s := m.selectedLabels()
+		s := m.selectedSeries().Labels
 		if id == "copy" {
 			if scope == graphKeys {
 				row := m.chart.result.Series[m.chart.selected]
@@ -308,7 +353,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 				_, s, _ = m.table.Fields(m.table.Row)
 			}
 		}
-		return func() tea.Msg { return copied{clipboard.WriteAll(s)} }
+		return copyText(s)
 	case "page":
 		m.table.Move(delta * m.page())
 	case "edge":
@@ -318,13 +363,20 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		}
 		m.table.Move(n - m.table.Row)
 	case "pan":
-		m.table.Pan(delta*8, m.width)
+		m.table.Pan(delta*8, m.width-2)
 	case "sample":
 		m.table.Sample(delta)
 	case "sort":
 		m.table.Sort(key == "v")
 	case "scroll":
 		step := 1
+		if scope == labelKeys {
+			if key == "pgup" || key == "pgdown" {
+				step = max(1, m.dialogBounds(m.workspace()).height-2)
+			}
+			m.offset = min(max(0, m.offset+delta*step), len(m.labelFields)-1)
+			break
+		}
 		if key == "pgup" || key == "pgdown" {
 			step = m.height - 2
 		}
@@ -352,3 +404,5 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	}
 	return nil
 }
+
+func copyText(s string) tea.Cmd { return func() tea.Msg { return copied{clipboard.WriteAll(s)} } }

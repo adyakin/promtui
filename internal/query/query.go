@@ -40,6 +40,7 @@ func (r Request) step() time.Duration {
 
 type Series struct {
 	Name, Labels string
+	Metric       model.Metric // original labels, including __name__ when present
 	Samples      []model.SamplePair
 	Text         *string // string result instead of numeric sample
 }
@@ -65,7 +66,7 @@ func Execute(ctx context.Context, c api.Client, r Request) (Result, error) {
 		if name == "" {
 			name = resp.Value.Type().String()
 		}
-		out.Series = append(out.Series, Series{name, m.String(), samples, text})
+		out.Series = append(out.Series, Series{Name: name, Labels: m.String(), Metric: m, Samples: samples, Text: text})
 	}
 	switch v := resp.Value.(type) {
 	case *model.Vector:
