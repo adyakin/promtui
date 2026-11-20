@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
 )
 
@@ -13,5 +15,41 @@ func TestDefaultDirs(t *testing.T) {
 	}
 	if want := filepath.Join(home, ".local", "share", "promtui"); dataDir != want {
 		t.Errorf("data dir = %q, want %q", dataDir, want)
+	}
+}
+
+func TestVersionCommands(t *testing.T) {
+	previous := version
+	version = "v1.2.3"
+	t.Cleanup(func() { version = previous })
+	t.Setenv("HOME", "")
+
+	for _, args := range [][]string{{"--version"}, {"-version"}, {"version"}, {"-config", "missing.yaml", "--version"}} {
+		var out bytes.Buffer
+		if err := run(args, &out); err != nil {
+			t.Fatalf("run(%v): %v", args, err)
+		}
+		if got, want := out.String(), "promtui v1.2.3\n"; got != want {
+			t.Errorf("run(%v) printed %q, want %q", args, got, want)
+		}
+	}
+}
+
+func TestBuildVersion(t *testing.T) {
+	info := &debug.BuildInfo{}
+	if got := buildVersion("", info); got != "devel" {
+		t.Errorf("build without metadata = %q, want devel", got)
+	}
+	info.Main.Version = "(devel)"
+	info.Settings = []debug.BuildSetting{
+		{Key: "vcs.revision", Value: "0123456789abcdef"},
+		{Key: "vcs.modified", Value: "true"},
+	}
+	if got := buildVersion("", info); got != "devel+0123456789ab-dirty" {
+		t.Errorf("dirty build = %q, want devel+0123456789ab-dirty", got)
+	}
+	info.Main.Version = "v1.2.2"
+	if got := buildVersion("", info); got != "v1.2.2" {
+		t.Errorf("versioned module = %q, want v1.2.2", got)
 	}
 }

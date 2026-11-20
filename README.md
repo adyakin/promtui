@@ -29,6 +29,8 @@ cp config.example.yaml config.yaml
 ./bin/promtui -config config.yaml
 ```
 
+Run `promtui --version` (or `promtui version`) to check which binary you're running, without loading configuration. Use `./bin/promtui --version` to check a local build directly. Release binaries show their release tag; builds between tags identify the commit and indicate whether the working tree had uncommitted changes.
+
 Press **i** to edit a query and **Ctrl+Enter** or **Ctrl+G** to run it. Use **g** for Graph, **t** for Table, **0–2** to switch tabs, and **c** to change connections. Press **?** for help outside text inputs and **Alt+S** (Option+S on macOS with Option configured as Alt) for request status. PromTUI does not bind function keys. Graphs require a terminal with Kitty graphics support, such as Kitty or Rex.
 
 ## Example configuration
