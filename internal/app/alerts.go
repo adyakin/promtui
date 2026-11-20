@@ -60,7 +60,7 @@ type alertsState struct {
 func newAlertsState() alertsState {
 	input := textinput.New()
 	input.Prompt = "  Filter: "
-	input.Placeholder = "type to filter alerts"
+	input.Placeholder = "state, severity, alert, instance, duration"
 	input.CharLimit = 4096
 	input.SetVirtualCursor(false)
 	return alertsState{input: input}
@@ -80,13 +80,17 @@ func (a *alertsState) selection() string {
 	return ""
 }
 
-func (a *alertsState) rebuild(id string, row int) {
+func (a *alertsState) rebuild(id string, row int, now time.Time) {
 	filter := newFuzzyFilter(a.currentFilter())
 	a.visible = a.visible[:0]
 	for _, item := range a.rows {
-		if item.matches(filter) {
-			a.visible = append(a.visible, item)
+		if len(filter) > 0 {
+			f := item.tableFields(now)
+			if !filter.matches(f.state, f.severity, f.name, f.instance, f.duration) {
+				continue
+			}
 		}
+		a.visible = append(a.visible, item)
 	}
 	slices.SortFunc(a.visible, func(x, y alertRow) int { return compareAlertRows(x, y, a.newestFirst) })
 	a.moveTo(row)
@@ -175,7 +179,7 @@ func (m *Model) onAlertsCompleted(v alertsCompleted, now time.Time) tea.Cmd {
 			a.rows = append(a.rows, newAlertRow(m.opt.Connection.AlertmanagerURL, alert))
 		}
 		a.counts = countAlerts(a.rows)
-		a.rebuild(id, row)
+		a.rebuild(id, row, now)
 	}
 	return m.scheduleAlertsTick(now)
 }
@@ -185,7 +189,7 @@ func (a *alertsState) edit(msg tea.Msg) tea.Cmd {
 	input, cmd := a.input.Update(msg)
 	a.input = input
 	if a.input.Value() != before {
-		a.rebuild(a.selection(), a.row)
+		a.rebuild(a.selection(), a.row, time.Now())
 	}
 	return cmd
 }
@@ -200,7 +204,7 @@ func (a *alertsState) setError(err error) {
 	}
 	if a.input.Focused() {
 		a.input.Blur()
-		a.rebuild(a.filterAnchor, a.filterRow)
+		a.rebuild(a.filterAnchor, a.filterRow, time.Now())
 	}
 }
 
@@ -223,7 +227,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 			a.input.Blur()
 		case "esc":
 			a.input.Blur()
-			a.rebuild(a.filterAnchor, a.filterRow)
+			a.rebuild(a.filterAnchor, a.filterRow, time.Now())
 		default:
 			return a.edit(k)
 		}
@@ -289,7 +293,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 	case "s":
 		if len(a.rows) > 0 {
 			a.newestFirst = !a.newestFirst
-			a.rebuild(a.selection(), a.row)
+			a.rebuild(a.selection(), a.row, time.Now())
 		}
 	case "r":
 		return m.refreshAlerts()

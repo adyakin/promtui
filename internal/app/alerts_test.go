@@ -44,8 +44,6 @@ func TestAlertRows(t *testing.T) {
 	rows[2].Status.InhibitedBy = []string{"parent"}
 	rows[3].Status.SilencedBy, rows[3].Status.InhibitedBy = []string{"silence"}, []string{"parent"}
 	rows[4].Status.SilencedBy = []string{"silence"}
-	rows[1].Labels["cluster"] = "West-Prod"
-	rows[1].Annotations = map[string]string{"runbook": "Fleet recovery"}
 	a := newAlertsState()
 	for _, row := range rows {
 		a.rows = append(a.rows, newAlertRow("source", row))
@@ -66,28 +64,56 @@ func TestAlertRows(t *testing.T) {
 			t.Fatalf("got %v, want %v", got, want)
 		}
 	}
-	a.rebuild("", 0)
+	a.rebuild("", 0, now)
 	checkOrder("early", "late", "misc", "both", "sil", "inhib", "queue", "unknown")
 	a.newestFirst = true
-	a.rebuild(a.selection(), a.row)
+	a.rebuild(a.selection(), a.row, now)
 	checkOrder("both", "inhib", "late", "sil", "early", "misc", "queue", "unknown")
 	if a.row != 4 {
 		t.Fatalf("sort lost selection: %d", a.row)
 	}
-	a.filter = "wStPrOd"
-	a.rebuild(a.selection(), a.row)
-	checkOrder("early")
-	for _, filter := range []string{"clstr", "rnbk", "flt rcvry"} {
-		a.filter = filter
-		a.rebuild(a.selection(), a.row)
-		checkOrder("early")
-	}
 	a.filter = "slncd"
-	a.rebuild(a.selection(), a.row)
+	a.rebuild(a.selection(), a.row, now)
 	checkOrder("both", "sil")
 	a.filter = "CRIT"
-	a.rebuild(a.selection(), a.row)
+	a.rebuild(a.selection(), a.row, now)
 	checkOrder("inhib", "late", "early")
+}
+
+func TestAlertFilterSearchesOnlyTableColumns(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	critical := testAlert("fingerprint-warning", "HaproxyHasNoAliveBackends", "critical", "active", now.Add(-8*24*time.Hour-9*time.Hour))
+	critical.Labels["instance"] = "proxy-west"
+	critical.Labels["team"] = "certificate-ops"
+	critical.Annotations = map[string]string{"summary": "Certificate warning", "runbook": "Fleet recovery"}
+	critical.GeneratorURL = "https://prometheus.example/rule"
+	warning := testAlert("warning", "CertCheck", "warning", "active", now.Add(-6*time.Hour))
+	warning.Labels["instance"] = "node-east"
+
+	a := newAlertsState()
+	for _, alert := range []alertmanager.Alert{critical, warning} {
+		a.rows = append(a.rows, newAlertRow("https://cluster-west-router", alert))
+	}
+	for _, tc := range []struct{ filter, want string }{
+		{"Cert", "warning"},
+		{"warn", "warning"},
+		{"crtchk", "warning"},
+		{"prxywst", critical.Fingerprint},
+		{"8d9h", critical.Fingerprint},
+		{"runbook", ""},
+		{"fleet recovery", ""},
+		{"certificate-ops", ""},
+		{"prometheus", ""},
+		{"fingerprint", ""},
+	} {
+		a.filter = tc.filter
+		a.rebuild("", 0, now)
+		if tc.want == "" && len(a.visible) == 0 ||
+			tc.want != "" && len(a.visible) == 1 && a.visible[0].Fingerprint == tc.want {
+			continue
+		}
+		t.Errorf("filter %q: got %v, want %q", tc.filter, a.visible, tc.want)
+	}
 }
 
 func TestAlertIdentityAndDuration(t *testing.T) {

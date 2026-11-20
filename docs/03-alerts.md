@@ -220,7 +220,8 @@ Press `/` to enter filter mode.
 Requirements:
 
 - Case-insensitive fuzzy matching: typed characters must occur in order within a field.
-- Search all alert fields, including state, label and annotation names and values, and receivers.
+- Search only the table fields: state, severity, alert name, instance, and duration.
+- Labels and annotations shown only in alert details are not searched.
 - Update results interactively.
 - `Enter` applies the filter.
 - `Esc` cancels filter editing.

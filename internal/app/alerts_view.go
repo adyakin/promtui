@@ -148,9 +148,8 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 			room := m.alertPage()
 			first := min(max(0, a.row-room/2), max(0, len(a.visible)-room))
 			for i := first; i < min(first+room, len(a.visible)); i++ {
-				item := a.visible[i]
-				body[3+i-first] = alertColumns(width, i == a.row, item.state(), alertValue(item.Labels["severity"]), alertValue(item.Labels["alertname"]),
-					alertValue(item.Labels["instance"]), alertDuration(item.StartsAt, now))
+				f := a.visible[i].tableFields(now)
+				body[3+i-first] = alertColumns(width, i == a.row, f.state, f.severity, f.name, f.instance, f.duration)
 			}
 		}
 	}
@@ -280,7 +279,7 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll status", "Esc or ?: return to status"}
 		default:
 			lines = []string{"↑ / ↓: select an alert", "PgUp / PgDn: move one page", "Home / End: first / last alert",
-				"Enter: open details", "/: fuzzy-filter alert fields (Enter applies, Esc cancels)",
+				"Enter: open details", "/: fuzzy-filter table columns (Enter applies, Esc cancels)",
 				"s: switch between state/severity and newest-first", "r: refresh now (auto-refresh every 30s)",
 				"Alt+S: show request status", "0 / 1 / 2 or Alt+0 / 1 / 2: switch tabs", "q: quit"}
 			if a.err != nil {

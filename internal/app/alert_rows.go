@@ -24,9 +24,8 @@ const (
 
 type alertRow struct {
 	alertmanager.Alert
-	id     string
-	group  alertStatus
-	search []string
+	id    string
+	group alertStatus
 }
 
 func newAlertRow(source string, a alertmanager.Alert) alertRow {
@@ -51,19 +50,7 @@ func newAlertRow(source string, a alertmanager.Alert) alertRow {
 	case a.Status.State == "unprocessed":
 		group = alertUnprocessed
 	}
-	row := alertRow{Alert: a, id: id, group: group}
-	row.search = []string{source, a.Fingerprint, row.state(), a.Status.State, a.GeneratorURL}
-	for _, timestamp := range []time.Time{a.StartsAt, a.EndsAt, a.UpdatedAt} {
-		if !timestamp.IsZero() {
-			row.search = append(row.search, timestamp.Format(time.RFC3339Nano))
-		}
-	}
-	for _, receiver := range a.Receivers {
-		row.search = append(row.search, receiver.Name)
-	}
-	row.search = append(row.search, a.Status.SilencedBy...)
-	row.search = append(row.search, a.Status.InhibitedBy...)
-	return row
+	return alertRow{Alert: a, id: id, group: group}
 }
 
 func (a alertRow) state() string {
@@ -94,8 +81,13 @@ func countAlerts(rows []alertRow) alertCounts {
 	return c
 }
 
-func (a alertRow) matches(f fuzzyFilter) bool {
-	return f.matches(a.search...) || matchLabels(f, a.Labels) || matchLabels(f, a.Annotations)
+type alertFields struct{ state, severity, name, instance, duration string }
+
+func (a alertRow) tableFields(now time.Time) alertFields {
+	return alertFields{
+		state: a.state(), severity: alertValue(a.Labels["severity"]), name: alertValue(a.Labels["alertname"]),
+		instance: alertValue(a.Labels["instance"]), duration: alertDuration(a.StartsAt, now),
+	}
 }
 
 func severityRank(s string) int {
