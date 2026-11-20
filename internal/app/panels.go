@@ -26,7 +26,7 @@ type panels struct {
 	isolatedIndex             int
 }
 
-const dialogKeys = rangeKeys | seriesKeys | labelKeys
+const dialogKeys = rangeKeys | seriesKeys | labelKeys | savedQueryKeys
 
 func (m *Model) openPanel(scope keyScope) {
 	m.dismiss()
@@ -284,27 +284,12 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 	var name string
 	var lines []string
 	row := func(text, swatch string, selected bool) {
-		prefix := "   "
-		style := dialogSurface
-		if selected {
-			prefix = " › "
-			style = style.Bold(true).Background(lipgloss.Color("#465972")).Foreground(lipgloss.Color("15"))
-		}
-		if swatch != "" {
-			prefix = style.Render(prefix) + style.Foreground(lipgloss.Color(swatch)).Render("■") + style.Render(" ")
-		} else {
-			prefix = style.Render(prefix)
-		}
-		room := inner - ansi.StringWidth(prefix) - 1
-		lines = append(lines, prefix+style.Width(room).Render(ansi.Truncate(text, room, "…"))+style.Render(" "))
-	}
-	start := func(selected, count, room int) int {
-		return min(max(0, selected-room/2), max(0, count-room))
+		lines = append(lines, dialogRow(text, swatch, inner, selected))
 	}
 
 	if m.pickingConnection {
 		room := d.height - 2
-		first := start(m.connectionRow, len(m.opt.Connections), room)
+		first := dialogStart(m.connectionRow, len(m.opt.Connections), room)
 		for i := first; i < min(first+room, len(m.opt.Connections)); i++ {
 			text := ui.Plain(m.opt.Connections[i].Name)
 			if m.opt.Connections[i].Name == m.opt.Connection.Name {
@@ -318,7 +303,7 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 	case rangeKeys:
 		name = "Time range"
 		room := d.height - 2
-		first := start(m.rangeRow, len(m.ranges), room)
+		first := dialogStart(m.rangeRow, len(m.ranges), room)
 		for i := first; i < min(first+room, len(m.ranges)); i++ {
 			window := m.ranges[i]
 			text := windowLabel(window)
@@ -340,7 +325,7 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 			lines = append(lines, dialogSurface.Render("  No matching series"))
 		}
 		room := d.height - len(lines) - 2
-		first := start(m.seriesRow, len(m.filtered), room)
+		first := dialogStart(m.seriesRow, len(m.filtered), room)
 		for i := first; i < min(first+room, len(m.filtered)); i++ {
 			index := m.filtered[i]
 			state := "[ ]"
@@ -356,7 +341,7 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 			break
 		}
 		room := d.height - 2
-		first := start(m.offset, len(m.labelFields), room)
+		first := dialogStart(m.offset, len(m.labelFields), room)
 		nameWidth := 0
 		for _, f := range m.labelFields {
 			nameWidth = max(nameWidth, min(inner/3, ansi.StringWidth(f.name)))
@@ -372,4 +357,23 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 		}
 	}
 	return lipgloss.NewLayer(renderFrame(name, "", lines, d.width, true, dialogSurface)).X(d.x).Y(d.y).Z(1)
+}
+
+func dialogStart(selected, count, room int) int {
+	return min(max(0, selected-room/2), max(0, count-room))
+}
+
+func dialogRow(text, swatch string, inner int, selected bool) string {
+	prefix := "   "
+	style := dialogSurface
+	if selected {
+		prefix = " › "
+		style = style.Bold(true).Background(lipgloss.Color("#465972")).Foreground(lipgloss.Color("15"))
+	}
+	prefix = style.Render(prefix)
+	if swatch != "" {
+		prefix += style.Foreground(lipgloss.Color(swatch)).Render("■") + style.Render(" ")
+	}
+	room := inner - ansi.StringWidth(prefix) - 1
+	return prefix + style.Width(room).Render(ansi.Truncate(text, room, "…")) + style.Render(" ")
 }

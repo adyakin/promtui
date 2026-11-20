@@ -24,10 +24,15 @@ const (
 	rangeKeys
 	seriesKeys
 	filterKeys
-	resultKeys = tableKeys | graphKeys
-	mainKeys   = editKeys | resultKeys
-	scrollKeys = helpKeys | detailKeys | labelKeys
-	allKeys    = mainKeys | completionKeys | historyKeys | scrollKeys | rangeKeys | seriesKeys | filterKeys
+	savedBrowserKeys
+	savedSearchKeys
+	savedNameKeys
+	savedConfirmKeys
+	savedQueryKeys = savedBrowserKeys | savedSearchKeys | savedNameKeys | savedConfirmKeys
+	resultKeys     = tableKeys | graphKeys
+	mainKeys       = editKeys | resultKeys
+	scrollKeys     = helpKeys | detailKeys | labelKeys
+	allKeys        = mainKeys | completionKeys | historyKeys | scrollKeys | rangeKeys | seriesKeys | filterKeys | savedQueryKeys
 )
 
 type binding struct {
@@ -41,6 +46,8 @@ const runHint = "Ctrl+Enter Run"
 var bindings = []binding{
 	{"run", "f5 ctrl+enter ctrl+g", "Ctrl+Enter / F5 / Ctrl+G", runHint, editKeys | completionKeys},
 	{"results", "tab shift+tab", "Tab / Shift+Tab", "Tab Results", editKeys},
+	{"saveQuery", "ctrl+s", "Ctrl+S", "Ctrl+S Save", editKeys | completionKeys},
+	{"browseQueries", "ctrl+o", "Ctrl+O", "Ctrl+O Saved", editKeys | completionKeys},
 	{"history", "ctrl+r", "Ctrl+R", "Ctrl+R History", editKeys | completionKeys},
 	{"complete", "ctrl+space ctrl+@", "Ctrl+Space", "Ctrl+Space Complete", editKeys | completionKeys},
 	{"edit", "i tab shift+tab", "i / Tab / Shift+Tab", "i Edit", resultKeys},
@@ -49,6 +56,7 @@ var bindings = []binding{
 	{"series", "s", "s", "s Series", resultKeys},
 	{"range", "r", "r", "r Range", resultKeys},
 	{"quit", "q", "q", "q Quit", resultKeys},
+	{"browseQueries", "ctrl+o", "Ctrl+O", "Ctrl+O Saved", resultKeys},
 	{"select", "up down", "↑ / ↓", "↑↓ Select", resultKeys | rangeKeys | seriesKeys},
 	{"toggle", "space", "Space", "Space Toggle", graphKeys | seriesKeys},
 	{"expand", "enter", "Enter", "Enter Expand", tableKeys},
@@ -66,6 +74,14 @@ var bindings = []binding{
 	{"selectAssist", "up down", "↑ / ↓", "↑↓ Select", completionKeys | historyKeys},
 	{"inspectCopy", "y", "y", "y Copy labels", labelKeys},
 	{"scroll", "up down pgup pgdown", "↑ / ↓ / PgUp / PgDn", "↑↓ Scroll", scrollKeys},
+	{"savedLoad", "enter", "Enter", "Enter Load", savedBrowserKeys},
+	{"savedSelect", "up down", "↑ / ↓", "↑↓ Select", savedBrowserKeys | savedSearchKeys},
+	{"savedSearch", "/", "/", "/ Search", savedBrowserKeys},
+	{"savedRename", "e", "e", "e Rename", savedBrowserKeys},
+	{"savedUpdate", "u", "u", "u Update", savedBrowserKeys},
+	{"savedDelete", "d", "d", "d Delete", savedBrowserKeys},
+	{"savedSearchDone", "enter", "Enter", "Enter Done", savedSearchKeys},
+	{"savedApply", "enter", "Enter", "Enter Confirm", savedNameKeys | savedConfirmKeys},
 	{"cancelOrQuit", "ctrl+c", "Ctrl+C", "Ctrl+C Quit", allKeys},
 	{"back", "esc", "Esc", "Esc Back", allKeys &^ resultKeys},
 	{"help", "f1", "F1", "F1 Help", editKeys | completionKeys},
@@ -131,6 +147,12 @@ func (m *Model) available(b binding, scope keyScope) bool {
 		return !m.chart.result.Start.IsZero() && len(m.chart.visible) > 0
 	case "accept", "restore", "selectAssist":
 		return len(m.options) > 0
+	case "savedLoad", "savedSelect", "savedRename", "savedUpdate", "savedDelete":
+		return len(m.savedQueries.matches) > 0
+	case "savedSearch":
+		return len(m.savedQueries.queries) > 0
+	case "savedApply":
+		return m.savedQueries.openErr == nil
 	case "scroll":
 		if scope == labelKeys {
 			return len(m.labelFields) > 1
@@ -153,13 +175,17 @@ func (m *Model) promQLFooter() string {
 	var hints []string
 	reserved := ""
 	gap := "   "
+	if scope&savedQueryKeys != 0 {
+		gap = "  "
+	}
 	compact := scope == editKeys && m.width < 1+len(runHint)+len("Tab Results")+len("Esc Back")+2*len(gap)
 	if compact {
 		gap = "  "
 	}
 	for _, b := range bindings {
 		if b.scope&scope == 0 || b.hint == "" || !m.available(b, scope) ||
-			scope == completionKeys && (b.id == "run" || b.id == "history" || b.id == "complete" || b.id == "help") {
+			scope == completionKeys && (b.id == "run" || b.id == "history" || b.id == "complete" || b.id == "help" ||
+				b.id == "saveQuery" || b.id == "browseQueries") {
 			continue
 		}
 		hint := b.hint
@@ -183,6 +209,18 @@ func (m *Model) promQLFooter() string {
 		}
 		if b.id == "back" && scope == labelKeys {
 			hint = "Esc Close"
+		}
+		if b.id == "back" && scope&savedQueryKeys != 0 {
+			hint = "Esc Cancel"
+			if scope == savedBrowserKeys {
+				hint = "Esc Close"
+			}
+		}
+		if b.id == "savedApply" {
+			hint = "Enter " + m.savedQueries.action.label()
+			if len(hint)+len("Esc Cancel")+len(gap)+1 > m.width {
+				hint = "Enter OK"
+			}
 		}
 		if b.id == "back" {
 			reserved = hint
@@ -247,6 +285,8 @@ func (m *Model) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 	}
 	switch scope {
+	case savedNameKeys, savedSearchKeys:
+		return m.editSavedInput(k), true
 	case historyKeys, filterKeys:
 		if key == "backspace" {
 			m.editFilter("", true)
@@ -291,6 +331,8 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		return m.editor.Focus()
 	case "back":
 		switch scope {
+		case savedBrowserKeys, savedSearchKeys, savedNameKeys, savedConfirmKeys:
+			m.backSavedQueries()
 		case editKeys, completionKeys:
 			m.dismiss()
 			m.editor.Blur()
@@ -403,6 +445,27 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		m.dismiss()
 		m.searchText, m.searching = "", true
 		m.searchHistory()
+	case "saveQuery":
+		return m.openSavedQueries(true)
+	case "browseQueries":
+		return m.openSavedQueries(false)
+	case "savedSelect":
+		q := &m.savedQueries
+		q.row = min(max(0, q.row+delta), len(q.matches)-1)
+	case "savedLoad":
+		return m.loadSavedQuery()
+	case "savedSearch":
+		return m.startSavedSearch()
+	case "savedSearchDone":
+		m.finishSavedSearch(false)
+	case "savedRename":
+		return m.openSavedAction(renameSaved)
+	case "savedUpdate":
+		return m.openSavedAction(updateSaved)
+	case "savedDelete":
+		return m.openSavedAction(deleteSaved)
+	case "savedApply":
+		return m.applySavedAction()
 	case "complete":
 		return m.schedule(true)
 	case "recall":

@@ -23,9 +23,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	dataDir := filepath.Join(home, ".local", "share", "promtui")
 	path := flag.String("config", "", "configuration file (.yaml, .yml, or .toml; default: first match in the user config directory under promtui/)")
 	name := flag.String("connection", "", "configured connection name")
-	hist := flag.String("history", filepath.Join(home, ".local", "share", "promtui", "history.jsonl"), "query history file")
+	hist := flag.String("history", filepath.Join(dataDir, "history.jsonl"), "query history file")
 	window := flag.Duration("range", 0, "start in range mode, e.g. 15m or 168h")
 	start := flag.String("start", "", "range start (RFC3339; requires -end)")
 	end := flag.String("end", "", "fixed evaluation time or range end (RFC3339)")
@@ -45,6 +46,7 @@ func run() error {
 		*name = cfg.General.Default
 	}
 	o := app.Options{Connections: cfg.Connections, Timeout: cfg.Query.Timeout, Window: cfg.Query.Range, Step: *step, Limit: cfg.Query.MaxSeries, HistoryPath: *hist, HistoryLimit: cfg.General.History}
+	o.SavedQueriesPath = filepath.Join(dataDir, "queries.yaml")
 	switch *graphics {
 	case "auto":
 		o.Graphics = os.Getenv("TERM_PROGRAM") == "rex" || os.Getenv("TERM") == "xterm-kitty"

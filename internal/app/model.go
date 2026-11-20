@@ -31,6 +31,7 @@ type Options struct {
 	Ranged                bool
 	Limit, HistoryLimit   int
 	HistoryPath           string
+	SavedQueriesPath      string
 }
 type completed struct {
 	id      int
@@ -63,6 +64,9 @@ type promQLState struct {
 	cancel                                context.CancelFunc
 	saving, dirty                         bool
 	panels
+	savedQueries    savedQueriesState
+	savedFeedback   string
+	savedFeedbackID int
 }
 
 func New(o Options, entries []history.Entry) *Model {
@@ -83,6 +87,7 @@ func (m *Model) resize(w, h int) {
 	m.editor.SetHeight(max(1, min(6, h/4, h-9)))
 	m.alerts.input.SetWidth(max(1, w-13))
 	m.targets.input.SetWidth(max(1, w-13))
+	m.sizeSavedInput()
 }
 func (m *Model) Init() tea.Cmd {
 	if m.opt.ProbeGraphics {
@@ -217,6 +222,11 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case graphFrame, tea.RawMsg:
 		return m, nil
+	case savedFeedbackExpired:
+		if int(v) == m.savedFeedbackID {
+			m.savedFeedback = ""
+		}
+		return m, nil
 	case analysisMsg:
 		return m, m.analyzed(v)
 	case suggestionsMsg:
@@ -274,6 +284,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.quitting || m.activeTab != promQLTab {
 			return m, nil
+		} else if m.panel&savedQueryKeys != 0 {
+			return m, m.editSavedInput(v)
 		} else if scope := m.scope(); scope == historyKeys || scope == filterKeys {
 			m.editFilter(v.Content, false)
 			return m, nil
@@ -407,6 +419,9 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	clip := func(s string) string { return ansi.Truncate(ui.Plain(s), m.width, "…") }
 	inner := m.width - 2
 	status := m.status
+	if m.savedFeedback != "" {
+		status = m.savedFeedback + " · " + status
+	}
 	if m.historyError != "" {
 		status = m.historyError + " · " + status
 	}
@@ -457,6 +472,10 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 		clip(" " + status), m.footer()}, "\n")
 	if m.popup || m.searching {
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.menu(1+x, 3+y)).Render(), nil
+	}
+	if !m.pickingConnection && m.panel&savedQueryKeys != 0 {
+		dialog, cursor := m.savedQueryLayer()
+		return lipgloss.NewCompositor(lipgloss.NewLayer(base), dialog).Render(), cursor
 	}
 	if !m.pickingConnection && m.panel&dialogKeys != 0 {
 		if dialog := m.dialogLayer(w); dialog != nil {
