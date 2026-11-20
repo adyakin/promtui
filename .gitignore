@@ -3,6 +3,7 @@
 #
 # Binaries for programs and plugins
 /bin/
+/build/
 *.exe
 *.exe~
 *.dll
@@ -29,6 +30,11 @@ go.work.sum
 
 # env file
 .env
+
+# Local configuration
+/config.yaml
+/config.yml
+/config.toml
 
 # Local Spike 0 artifacts
 /tmp/

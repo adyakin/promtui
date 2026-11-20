@@ -17,6 +17,7 @@ require (
 	github.com/sahilm/fuzzy v0.1.1
 	golang.org/x/image v0.34.0
 	golang.org/x/sys v0.45.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

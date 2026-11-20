@@ -1,3 +1,5 @@
+insecure_skip_verify = false
+
 [general]
 default_connection = "local"
 history_limit = 1000
@@ -16,3 +18,4 @@ url = "http://localhost:9090"
 name = "cluster"
 url = "http://vmselect:8481/select/0/prometheus"
 # alertmanager_url = "https://monitoring.example.org/alertmanager"
+# insecure_skip_verify = false

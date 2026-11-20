@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -107,7 +106,7 @@ func (m *Model) analyzed(a analysisMsg) tea.Cmd {
 	if timeout <= 0 || timeout > 3*time.Second {
 		timeout = 3 * time.Second
 	}
-	client := api.Client{Base: m.opt.Connection.URL, HTTP: http.DefaultClient}
+	client := api.Client{Base: m.opt.Connection.URL, HTTP: m.connectionHTTP()}
 	m.hint = "Loading suggestions…"
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(a.ctx, timeout)

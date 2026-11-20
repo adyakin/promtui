@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -123,9 +122,10 @@ func (m *Model) refreshAlerts() tea.Cmd {
 	a.cancel = cancel
 	a.requestID++
 	id := a.requestID
+	client := alertmanager.Client{Base: base, HTTP: m.connectionHTTP()}
 	return func() tea.Msg {
 		defer cancel()
-		rows, err := (alertmanager.Client{Base: base, HTTP: http.DefaultClient}).Alerts(ctx)
+		rows, err := client.Alerts(ctx)
 		return alertsCompleted{id, rows, err}
 	}
 }

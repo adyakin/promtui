@@ -43,7 +43,8 @@ type copied struct{ err error }
 type Model struct {
 	shellState
 	promQLState
-	alerts alertsState
+	alerts      alertsState
+	httpClients map[config.Connection]*http.Client
 }
 
 type promQLState struct {
@@ -145,9 +146,10 @@ func (m *Model) run() tea.Cmd {
 	m.status = "Running…"
 	m.entries = history.Add(m.entries, history.Entry{At: now.UTC(), Connection: o.Connection.Name, Query: expr}, o.HistoryLimit)
 	m.cursor = -1
+	client := api.Client{Base: o.Connection.URL, HTTP: m.connectionHTTP()}
 	return tea.Batch(m.save(), func() tea.Msg {
 		defer cancel()
-		res, err := query.Execute(ctx, api.Client{Base: o.Connection.URL, HTTP: http.DefaultClient}, r)
+		res, err := query.Execute(ctx, client, r)
 		return completed{id, res, time.Since(now), err}
 	})
 }

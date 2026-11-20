@@ -23,7 +23,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	path := flag.String("config", "", "TOML configuration (default: user config directory/promtui/config.toml)")
+	path := flag.String("config", "", "configuration file (.yaml, .yml, or .toml; default: first match in the user config directory under promtui/)")
 	name := flag.String("connection", "", "configured connection name")
 	hist := flag.String("history", filepath.Join(home, ".local", "share", "promtui", "history.jsonl"), "query history file")
 	window := flag.Duration("range", 0, "start in range mode, e.g. 15m or 168h")
@@ -32,11 +32,12 @@ func run() error {
 	step := flag.Duration("step", 0, "range step (default: automatic)")
 	graphics := flag.String("graphics", "auto", "range graphs: auto (Rex/Kitty), kitty, or off")
 	flag.Parse()
-	optional := *path == ""
-	if optional {
-		*path = filepath.Join(dir, "config.toml")
+	var cfg config.Config
+	if *path == "" {
+		cfg, err = config.LoadDefault(dir)
+	} else {
+		cfg, err = config.Load(*path, false)
 	}
-	cfg, err := config.Load(*path, optional)
 	if err != nil {
 		return err
 	}
