@@ -14,7 +14,7 @@ A keyboard-driven terminal UI for **Prometheus** and **VictoriaMetrics**. Run Pr
 
 ## Quick start
 
-Download the archive for your platform from [GitHub Releases](https://github.com/adyakin/promtui/releases/latest): `darwin_arm64` for Apple Silicon Macs or `linux_amd64` for 64-bit x86 Linux. Extract it, then run:
+Download the archive for your platform from [GitHub Releases](https://github.com/adyakin/promtui/releases/latest): `darwin_arm64` for Apple Silicon Macs or `linux_amd64` for 64-bit x86 Linux. Extract it, enter the extracted folder, then run:
 
 ```sh
 cp config.example.yaml config.yaml
