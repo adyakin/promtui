@@ -234,7 +234,7 @@ func TestModeShortcutSupersedesInFlightRequest(t *testing.T) {
 	}
 	press(m, 't')
 	m.Update(completed{id: oldID, result: sampleResult(true)})
-	if m.id == oldID || m.cancel == nil || m.opt.Ranged || m.chart.enabled || m.status != "Running…" {
+	if m.id == oldID || m.cancel == nil || m.opt.Ranged || m.chart.enabled || m.status != executingQuery {
 		t.Fatal("the old range response superseded the newer table request")
 	}
 	m.Update(completed{id: m.id, result: sampleResult(false)})

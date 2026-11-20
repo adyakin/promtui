@@ -17,6 +17,7 @@ import (
 	"promtui/internal/editor"
 	"promtui/internal/history"
 	"promtui/internal/kitty"
+	"promtui/internal/programstatus"
 	"promtui/internal/query"
 	"promtui/internal/ui"
 )
@@ -24,6 +25,7 @@ import (
 type Options struct {
 	Graphics              bool
 	ProbeGraphics         bool
+	ProgramStatus         bool
 	Connection            config.Connection
 	Connections           []config.Connection
 	Timeout, Window, Step time.Duration
@@ -44,9 +46,10 @@ type copied struct{ err error }
 type Model struct {
 	shellState
 	promQLState
-	alerts      alertsState
-	targets     targetsState
-	httpClients map[bool]*http.Client
+	alerts        alertsState
+	targets       targetsState
+	httpClients   map[bool]*http.Client
+	programStatus terminalStatus
 }
 
 type promQLState struct {
@@ -59,6 +62,8 @@ type promQLState struct {
 	cursor                                int
 	draft                                 string
 	status, summary, notice, historyError string
+	queryPhase                            queryPhase
+	queryError                            queryError
 	id                                    int
 	requestLabel                          string
 	cancel                                context.CancelFunc
@@ -108,21 +113,45 @@ func (m *Model) save() tea.Cmd {
 	entries, path := m.entries, m.opt.HistoryPath
 	return func() tea.Msg { return saved{history.Save(path, entries)} }
 }
-func (m *Model) stop() {
-	if m.cancel != nil {
-		m.cancel()
-		m.cancel = nil
-		m.id++
+func (m *Model) stop() bool {
+	if m.cancel == nil {
+		return false
 	}
+	m.cancel()
+	m.cancel = nil
+	m.id++
+	return true
 }
 
-func (m *Model) runMode(ranged bool) tea.Cmd {
+func (m *Model) setQueryMode(ranged bool) {
 	m.dismiss()
 	m.opt.Ranged = ranged
 	if ranged && m.opt.Window <= 0 {
 		m.opt.Window = time.Hour
 	}
+}
+
+func (m *Model) runMode(ranged bool) tea.Cmd {
+	m.setQueryMode(ranged)
+	if m.queryPhase == queryFailed {
+		// Let users switch the view without discarding the error. Run and
+		// confirming a new time range remain explicit executions.
+		return nil
+	}
 	return m.run()
+}
+
+func (m *Model) clearQueryResults() {
+	m.table = ui.Table{}
+	m.setGraphResult(query.Result{})
+	m.notice = ""
+	m.queryError = queryError{}
+	m.labelText, m.labelFields = "", nil
+	m.seriesRow, m.isolatedIndex = 0, 0
+	m.filtered, m.filtering = nil, false
+	if m.panel == labelKeys || m.panel == seriesKeys || m.panel == queryErrorKeys {
+		m.panel, m.offset = 0, 0
+	}
 }
 
 func (m *Model) run() tea.Cmd {
@@ -132,6 +161,7 @@ func (m *Model) run() tea.Cmd {
 		return nil
 	}
 	m.stop()
+	m.clearQueryResults()
 	m.id++
 	id, o := m.id, m.opt
 	now := time.Now()
@@ -150,7 +180,9 @@ func (m *Model) run() tea.Cmd {
 	m.requestLabel = mode + " · " + ui.Plain(expr)
 	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
 	m.cancel = cancel
-	m.status = "Running…"
+	m.queryPhase = queryRunning
+	m.status, m.summary = executingQuery, executingQuery
+	m.reportProgramStatus(programstatus.Working, "Executing PromQL query")
 	m.entries = history.Add(m.entries, history.Entry{At: now.UTC(), Connection: o.Connection.Name, Query: expr}, o.HistoryLimit)
 	m.cursor = -1
 	client := api.Client{Base: o.Connection.URL, HTTP: m.connectionHTTP()}
@@ -181,8 +213,15 @@ var presets = []time.Duration{15 * time.Minute, time.Hour, 6 * time.Hour, 24 * t
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.update(msg)
 	draw := m.syncGraph(msg)
-	if m.quitting && !m.saving && !m.chart.sending && m.chart.displayed.cols == 0 {
+	raw := m.flushProgramStatus(msg)
+	if m.quitting && !m.saving && !m.programStatus.sending && !m.chart.sending && m.chart.displayed.cols == 0 {
 		return model, tea.Quit
+	}
+	if raw != nil {
+		if next := tea.Batch(cmd, draw); next != nil {
+			return model, tea.Sequence(raw, next)
+		}
+		return model, raw
 	}
 	return model, tea.Batch(cmd, draw)
 }
@@ -216,7 +255,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if string(v.Payload) == "OK" {
 				m.opt.Graphics = true
 				m.chart.cw, m.chart.ch = kitty.CellSize()
-				m.chart.enabled = !m.chart.result.Start.IsZero()
+				m.chart.enabled = !m.chart.result.Start.IsZero() && len(m.chart.result.Series) > 0
 			}
 		}
 		return m, nil
@@ -253,19 +292,31 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancel = nil
 		duration := v.elapsed.Round(time.Millisecond)
 		if v.err != nil {
-			m.status = fmt.Sprintf("Error (%s): %v", duration, v.err)
+			m.clearQueryResults()
+			m.queryPhase = queryFailed
+			m.queryError = newQueryError(v.err, v.elapsed)
+			m.status, m.summary = m.queryError.heading(), "Query failed"
+			m.reportProgramStatus(programstatus.Error, "Query failed")
 			return m, nil
 		}
+		m.queryPhase = querySucceeded
+		m.queryError = queryError{}
 		m.status = fmt.Sprintf("Done in %s", duration)
+		m.reportProgramStatus(programstatus.Done, "Query completed")
 		m.table = ui.Table{Rows: v.result.Series}
 		// Sorting table rows must not reorder the legend/visibility map.
 		m.table.Rows = append([]query.Series(nil), m.table.Rows...)
 		m.setGraphResult(v.result)
-		m.summary = fmt.Sprintf("%d series · %s", len(m.table.Rows), m.requestLabel)
+		m.summary = "No data"
+		if len(m.table.Rows) > 0 {
+			m.summary = fmt.Sprintf("%d series · %s", len(m.table.Rows), m.requestLabel)
+		}
 		m.notice = strings.Join(v.result.Notices, "; ")
 		if m.panel == seriesKeys {
 			m.refreshSeries()
 		}
+	case copyQueryError:
+		return m, copyText(string(v))
 	case copied:
 		if v.err != nil {
 			m.status = "Clipboard: " + v.err.Error()
@@ -430,10 +481,10 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 		queryRows = append(queryRows, " PromQL: "+ui.Plain(m.diagnostic))
 	}
 	name, meta := "Results · Table", ""
-	if m.chart.enabled {
+	if m.graphView() {
 		name = "Results · Graph"
 	}
-	if m.summary != "No query executed" {
+	if m.queryPhase == querySucceeded {
 		meta = fmt.Sprintf("%d series", len(m.table.Rows))
 	}
 	var resultRows []string
@@ -443,14 +494,20 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	room := w.bottomY - w.bodyY
 	body := make([]string, room)
 	switch {
-	case m.summary == "No query executed":
+	case m.queryPhase == queryRunning:
+		body[0] = "  " + executingQuery
+	case m.queryPhase == queryCancelled:
+		body[0] = "  Query cancelled"
+	case m.queryPhase == queryFailed:
+		m.queryError.renderInline(body, inner-2, m.editor.Focused())
+	case m.queryPhase == queryReady:
 		if !m.editor.Focused() && m.editor.Value() == "" {
 			body[0] = "  Press i to edit query."
 		} else {
 			body[0] = "  Run with Ctrl+Enter."
 		}
 	case len(m.table.Rows) == 0:
-		body[0] = "  No matching series."
+		body[0] = "  No data"
 	case m.chart.enabled:
 		if room > 1 {
 			switch {

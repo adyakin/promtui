@@ -34,8 +34,8 @@ type shellState struct {
 }
 
 func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
-	if m.activeTab == promQLTab && m.panel&savedQueryKeys != 0 {
-		return nil, false // A saved query dialog owns all keys, including tab and connection shortcuts.
+	if m.activeTab == promQLTab && m.panel&(savedQueryKeys|queryErrorKeys) != 0 {
+		return nil, false // Modal dialogs own tab and connection shortcuts.
 	}
 	targetModal := m.activeTab == targetsTab && m.targets.dialog != noTargetDialog
 	if len(m.opt.Connections) > 0 {

@@ -41,11 +41,15 @@ func (m *Model) setGraphResult(r query.Result) {
 	g.revision++
 	g.result = r
 	g.selected = 0
-	g.enabled = m.opt.Graphics && !r.Start.IsZero()
+	g.enabled = m.opt.Graphics && !r.Start.IsZero() && len(r.Series) > 0
 	g.visible = make([]bool, len(r.Series))
 	for i := range g.visible {
 		g.visible[i] = i < 8
 	}
+}
+
+func (m *Model) graphView() bool {
+	return m.chart.enabled || m.opt.Graphics && m.opt.Ranged && len(m.table.Rows) == 0
 }
 func (m *Model) hasVisibleSeries() bool {
 	for _, on := range m.chart.visible {

@@ -6,13 +6,14 @@ import (
 	"errors"
 	"promtui/internal/config"
 	"promtui/internal/history"
+	"promtui/internal/ui"
 	"strings"
 	"testing"
 )
 
-func TestCancelIgnoresLateCompletionAndKeepsResults(t *testing.T) {
+func TestCancelIgnoresLateCompletionAndKeepsResultsCleared(t *testing.T) {
 	m := New(Options{}, nil)
-	m.summary = "previous result"
+	m.table.Rows = sampleResult(false).Series
 	ctx, cancel := context.WithCancel(t.Context())
 	m.cancel = cancel
 	id := m.id
@@ -21,11 +22,12 @@ func TestCancelIgnoresLateCompletionAndKeepsResults(t *testing.T) {
 		t.Fatal("request still active")
 	}
 	m.Update(completed{id: id})
-	if m.summary != "previous result" || m.status != "Cancelled" {
+	if len(m.table.Rows) != 0 || m.status != "Cancelled" || !strings.Contains(m.screen(), "Query cancelled") {
 		t.Fatal(m.View())
 	}
+	m.table = ui.Table{Rows: sampleResult(false).Series}
 	m.Update(completed{id: m.id, err: errors.New("bad expression")})
-	if m.summary != "previous result" || !strings.Contains(m.status, "bad expression") {
+	if len(m.table.Rows) != 0 || !strings.Contains(m.screen(), "bad expression") {
 		t.Fatal(m.View())
 	}
 }

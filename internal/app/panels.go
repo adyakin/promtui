@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ type panels struct {
 	isolatedIndex             int
 }
 
-const dialogKeys = rangeKeys | seriesKeys | labelKeys | savedQueryKeys
+const dialogKeys = rangeKeys | seriesKeys | labelKeys | savedQueryKeys | queryErrorKeys
 
 func (m *Model) openPanel(scope keyScope) {
 	m.dismiss()
@@ -166,8 +167,14 @@ func (m *Model) helpBody() []string {
 			description = "Switch between instant and range and rerun"
 		case "graph":
 			description = "Run a range query and show Graph"
+			if m.queryPhase == queryFailed {
+				description = "Switch to Graph without rerunning"
+			}
 		case "table":
 			description = "Run an instant query and show Table"
+			if m.queryPhase == queryFailed {
+				description = "Switch to Table without rerunning"
+			}
 		case "cancelOrQuit":
 			description = "Cancel active query, or quit if idle"
 		case "quit":
@@ -239,6 +246,11 @@ func (m *Model) dialogBounds(w workspace) dialogBounds {
 		return centered(min(60, width), len(m.opt.Connections)+2)
 	}
 	switch m.panel {
+	case queryErrorKeys:
+		width := min(72, m.width-2)
+		height := min(max(4, resultHeight), len(m.queryError.lines(width-4))+2)
+		y := w.resultY + (resultHeight-height)/2
+		return dialogBounds{(m.width - width) / 2, min(y, w.bottomY-height+1), width, height}
 	case rangeKeys:
 		width := 30
 		for _, d := range m.ranges {
@@ -272,6 +284,16 @@ func (m *Model) dialogBounds(w workspace) dialogBounds {
 	return dialogBounds{}
 }
 
+func (m *Model) errorViewport() (lines []string, room, limit int) {
+	d := m.dialogBounds(m.workspace())
+	if d.width == 0 {
+		return nil, 0, 0
+	}
+	lines = m.queryError.lines(d.width - 4)
+	room = d.height - 2
+	return lines, room, max(0, len(lines)-room)
+}
+
 var dialogSurface = lipgloss.NewStyle().
 	Background(lipgloss.Color("#303844")).Foreground(lipgloss.Color("#e0e8f0"))
 
@@ -281,7 +303,7 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 		return nil
 	}
 	inner := d.width - 2
-	var name string
+	var name, meta string
 	var lines []string
 	row := func(text, swatch string, selected bool) {
 		lines = append(lines, dialogRow(text, swatch, inner, selected))
@@ -300,6 +322,16 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 		return lipgloss.NewLayer(renderFrame("Connections", "", lines, d.width, true, dialogSurface)).X(d.x).Y(d.y).Z(1)
 	}
 	switch m.panel {
+	case queryErrorKeys:
+		name = "Query Error"
+		text, room, limit := m.errorViewport()
+		first := min(m.offset, limit)
+		if limit > 0 {
+			meta = fmt.Sprintf("%d–%d/%d", first+1, first+room, len(text))
+		}
+		for _, line := range text[first:min(first+room, len(text))] {
+			lines = append(lines, dialogSurface.Render(" "+line))
+		}
 	case rangeKeys:
 		name = "Time range"
 		room := d.height - 2
@@ -356,7 +388,7 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 			row(text, "", i == m.offset)
 		}
 	}
-	return lipgloss.NewLayer(renderFrame(name, "", lines, d.width, true, dialogSurface)).X(d.x).Y(d.y).Z(1)
+	return lipgloss.NewLayer(renderFrame(name, meta, lines, d.width, true, dialogSurface)).X(d.x).Y(d.y).Z(1)
 }
 
 func dialogStart(selected, count, room int) int {

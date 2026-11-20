@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+func TestProgramStatusConfig(t *testing.T) {
+	for _, tc := range []struct {
+		path, data string
+		want       bool
+	}{
+		{"config.yaml", "", true},
+		{"config.yaml", "terminal:\n  program_status: false\n", false},
+		{"config.toml", "", true},
+		{"config.toml", "[terminal]\nprogram_status = false\n", false},
+	} {
+		got, err := decode(tc.path, []byte(tc.data))
+		if err != nil || got.Terminal.ProgramStatus != tc.want {
+			t.Errorf("%q %q: got %t, %v; want %t", tc.path, tc.data, got.Terminal.ProgramStatus, err, tc.want)
+		}
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	c, err := Load(path, true)

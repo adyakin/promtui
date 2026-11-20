@@ -34,9 +34,14 @@ type querySettings struct {
 	MaxSeries int           `toml:"max_series" yaml:"max_series"`
 }
 
+type terminalSettings struct {
+	ProgramStatus bool `toml:"program_status" yaml:"program_status"`
+}
+
 type settings struct {
-	General generalSettings `toml:"general" yaml:"general"`
-	Query   querySettings   `toml:"query" yaml:"query"`
+	General  generalSettings  `toml:"general" yaml:"general"`
+	Query    querySettings    `toml:"query" yaml:"query"`
+	Terminal terminalSettings `toml:"terminal" yaml:"terminal"`
 }
 
 type Config struct {
@@ -54,8 +59,9 @@ type rawConnection struct {
 
 func defaults() settings {
 	return settings{
-		General: generalSettings{History: 1000},
-		Query:   querySettings{Timeout: 30 * time.Second, Range: time.Hour, MaxSeries: 500},
+		General:  generalSettings{History: 1000},
+		Query:    querySettings{Timeout: 30 * time.Second, Range: time.Hour, MaxSeries: 500},
+		Terminal: terminalSettings{ProgramStatus: true},
 	}
 }
 

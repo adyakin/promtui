@@ -9,6 +9,9 @@ timeout = "30s"
 default_range = "1h"
 max_series = 500
 
+[terminal]
+program_status = true
+
 [[connections]]
 name = "local"
 url = "http://localhost:9090"

@@ -9,6 +9,9 @@ query:
   default_range: 1h
   max_series: 500
 
+terminal:
+  program_status: true
+
 connections:
   local:
     url: http://localhost:9090

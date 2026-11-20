@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/term"
 	"promtui/internal/app"
 	"promtui/internal/config"
 	"promtui/internal/history"
@@ -47,6 +48,7 @@ func run() error {
 	}
 	o := app.Options{Connections: cfg.Connections, Timeout: cfg.Query.Timeout, Window: cfg.Query.Range, Step: *step, Limit: cfg.Query.MaxSeries, HistoryPath: *hist, HistoryLimit: cfg.General.History}
 	o.SavedQueriesPath = filepath.Join(dataDir, "queries.yaml")
+	o.ProgramStatus = cfg.Terminal.ProgramStatus && term.IsTerminal(os.Stdout.Fd())
 	switch *graphics {
 	case "auto":
 		o.Graphics = os.Getenv("TERM_PROGRAM") == "rex" || os.Getenv("TERM") == "xterm-kitty"
@@ -93,7 +95,7 @@ func run() error {
 		return fmt.Errorf("load %s: %w", *hist, err)
 	}
 	m := app.New(o, entries)
-	defer func() { fmt.Fprint(os.Stdout, m.CloseGraphics()) }()
+	defer func() { fmt.Fprint(os.Stdout, m.CloseTerminal()) }()
 	_, err = tea.NewProgram(m).Run()
 	if err == nil && m.HistoryError() != "" {
 		return fmt.Errorf("%s", m.HistoryError())

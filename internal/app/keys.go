@@ -8,6 +8,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/editor"
+	"promtui/internal/programstatus"
 )
 
 type keyScope uint16
@@ -28,10 +29,11 @@ const (
 	savedSearchKeys
 	savedNameKeys
 	savedConfirmKeys
+	queryErrorKeys
 	savedQueryKeys = savedBrowserKeys | savedSearchKeys | savedNameKeys | savedConfirmKeys
 	resultKeys     = tableKeys | graphKeys
 	mainKeys       = editKeys | resultKeys
-	scrollKeys     = helpKeys | detailKeys | labelKeys
+	scrollKeys     = helpKeys | detailKeys | labelKeys | queryErrorKeys
 	allKeys        = mainKeys | completionKeys | historyKeys | scrollKeys | rangeKeys | seriesKeys | filterKeys | savedQueryKeys
 )
 
@@ -50,6 +52,7 @@ var bindings = []binding{
 	{"browseQueries", "ctrl+o", "Ctrl+O", "Ctrl+O Saved", editKeys | completionKeys},
 	{"history", "ctrl+r", "Ctrl+R", "Ctrl+R History", editKeys | completionKeys},
 	{"complete", "ctrl+space ctrl+@", "Ctrl+Space", "Ctrl+Space Complete", editKeys | completionKeys},
+	{"queryError", "e", "e", "e Error details", resultKeys},
 	{"edit", "i tab shift+tab", "i / Tab / Shift+Tab", "i Edit", resultKeys},
 	{"graph", "g", "g", "g Graph", resultKeys},
 	{"table", "t", "t", "t Table", resultKeys},
@@ -73,6 +76,7 @@ var bindings = []binding{
 	{"finishFilter", "enter", "Enter", "Enter Done", filterKeys},
 	{"selectAssist", "up down", "↑ / ↓", "↑↓ Select", completionKeys | historyKeys},
 	{"inspectCopy", "y", "y", "y Copy labels", labelKeys},
+	{"copyQueryError", "y", "y", "y Copy", queryErrorKeys},
 	{"scroll", "up down pgup pgdown", "↑ / ↓ / PgUp / PgDn", "↑↓ Scroll", scrollKeys},
 	{"savedLoad", "enter", "Enter", "Enter Load", savedBrowserKeys},
 	{"savedSelect", "up down", "↑ / ↓", "↑↓ Select", savedBrowserKeys | savedSearchKeys},
@@ -104,7 +108,7 @@ func (m *Model) mainScope() keyScope {
 	switch {
 	case m.editor.Focused():
 		return editKeys
-	case m.chart.enabled:
+	case m.graphView():
 		return graphKeys
 	default:
 		return tableKeys
@@ -128,6 +132,8 @@ func (m *Model) scope() keyScope {
 
 func (m *Model) available(b binding, scope keyScope) bool {
 	switch b.id {
+	case "queryError", "copyQueryError":
+		return m.queryPhase == queryFailed
 	case "graph", "legacyView":
 		return m.opt.Graphics
 	case "series":
@@ -154,6 +160,10 @@ func (m *Model) available(b binding, scope keyScope) bool {
 	case "savedApply":
 		return m.savedQueries.openErr == nil
 	case "scroll":
+		if scope == queryErrorKeys {
+			_, _, limit := m.errorViewport()
+			return limit > 0
+		}
 		if scope == labelKeys {
 			return len(m.labelFields) > 1
 		}
@@ -177,6 +187,9 @@ func (m *Model) promQLFooter() string {
 	gap := "   "
 	if scope&savedQueryKeys != 0 {
 		gap = "  "
+	}
+	if scope == queryErrorKeys {
+		gap = " "
 	}
 	compact := scope == editKeys && m.width < 1+len(runHint)+len("Tab Results")+len("Esc Back")+2*len(gap)
 	if compact {
@@ -207,8 +220,11 @@ func (m *Model) promQLFooter() string {
 		if b.id == "isolate" && m.willRestoreSeries() {
 			hint = "Enter Restore"
 		}
-		if b.id == "back" && scope == labelKeys {
+		if b.id == "back" && (scope == labelKeys || scope == queryErrorKeys) {
 			hint = "Esc Close"
+		}
+		if b.id == "scroll" && scope == queryErrorKeys && m.width < 27 {
+			hint = "↑↓"
 		}
 		if b.id == "back" && scope&savedQueryKeys != 0 {
 			hint = "Esc Cancel"
@@ -249,7 +265,11 @@ func (m *Model) formatFooter(hints []string, reserved, gap string) string {
 	var visible []string
 	add := func(hint string) {
 		key, label, _ := strings.Cut(hint, " ")
-		visible = append(visible, title.Render(key)+" "+label)
+		text := title.Render(key)
+		if label != "" {
+			text += " " + label
+		}
+		visible = append(visible, text)
 	}
 	for _, hint := range hints {
 		if w := ansi.StringWidth(hint); width+w <= budget {
@@ -305,9 +325,11 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	}
 	switch id {
 	case "cancelOrQuit":
-		if m.cancel != nil {
-			m.stop()
-			m.status = "Cancelled"
+		if m.stop() {
+			m.reportProgramStatus(programstatus.Idle, "")
+			m.clearQueryResults()
+			m.queryPhase = queryCancelled
+			m.status, m.summary = "Cancelled", "Query cancelled"
 			break
 		}
 		fallthrough
@@ -350,6 +372,11 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		m.openPanel(helpKeys)
 	case "status":
 		m.openPanel(detailKeys)
+	case "queryError":
+		m.openPanel(queryErrorKeys)
+	case "copyQueryError":
+		text := copyQueryError(m.queryError.full)
+		return func() tea.Msg { return text }
 	case "graph":
 		return m.runMode(true)
 	case "table":
@@ -395,7 +422,8 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	case "apply":
 		m.opt.Window = m.ranges[m.rangeRow]
 		m.panel = 0
-		return m.runMode(true)
+		m.setQueryMode(true)
+		return m.run()
 	case "expand":
 		m.table.Expanded = !m.table.Expanded
 		m.table.X = 0
@@ -430,6 +458,14 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		m.table.Sort(key == "v")
 	case "scroll":
 		step := 1
+		if scope == queryErrorKeys {
+			_, room, limit := m.errorViewport()
+			if key == "pgup" || key == "pgdown" {
+				step = room
+			}
+			m.offset = min(max(0, min(m.offset, limit)+delta*step), limit)
+			break
+		}
 		if scope == labelKeys {
 			if key == "pgup" || key == "pgdown" {
 				step = max(1, m.dialogBounds(m.workspace()).height-2)

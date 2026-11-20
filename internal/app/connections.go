@@ -6,8 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"promtui/internal/config"
-	"promtui/internal/query"
-	"promtui/internal/ui"
+	"promtui/internal/programstatus"
 )
 
 func (m *Model) connectionHint() string {
@@ -39,11 +38,13 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 		if next.Name == m.opt.Connection.Name {
 			return nil
 		}
-		m.stop()
+		if m.stop() {
+			m.reportProgramStatus(programstatus.Idle, "")
+		}
 		m.cache = nil
 		m.panels = panels{}
-		m.table = ui.Table{}
-		m.setGraphResult(query.Result{})
+		m.clearQueryResults()
+		m.queryPhase = queryReady
 		m.status, m.summary, m.notice, m.requestLabel = "Ready", "No query executed", "", ""
 
 		m.alerts.stop()
