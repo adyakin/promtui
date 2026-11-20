@@ -149,10 +149,10 @@ func (m *Model) available(b binding, scope keyScope) bool {
 	return true
 }
 
-func (m *Model) footer() string {
+func (m *Model) promQLFooter() string {
 	scope := m.scope()
 	var hints []string
-	width, reserved := 1, ""
+	reserved := ""
 	gap := "   "
 	compact := scope == editKeys && m.width < 1+len(runHint)+len(gap)+len("Tab Results")
 	if compact {
@@ -189,8 +189,19 @@ func (m *Model) footer() string {
 			reserved = hint
 		} else {
 			hints = append(hints, hint)
+			if b.id == "results" {
+				hints = append(hints, "Alt+0–2 Tabs")
+			}
 		}
 	}
+	if scope&resultKeys != 0 {
+		hints = append(hints, "0–2 Tabs")
+	}
+	return m.formatFooter(hints, reserved, gap)
+}
+
+func (m *Model) formatFooter(hints []string, reserved, gap string) string {
+	width := 1
 	budget := m.width
 	if reserved != "" {
 		budget -= ansi.StringWidth(reserved) + len(gap)

@@ -99,6 +99,9 @@ func (m *Model) analyzed(a analysisMsg) tea.Cmd {
 		m.popup = m.popup || len(m.options) > 0
 		return nil
 	}
+	if m.activeTab != promQLTab {
+		return nil // Do not start a metadata request for an inactive editor.
+	}
 	id := m.generation
 	timeout := m.opt.Timeout
 	if timeout <= 0 || timeout > 3*time.Second {

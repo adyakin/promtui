@@ -19,9 +19,13 @@ func run() error {
 		return err
 	}
 	dir = filepath.Join(dir, "promtui")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
 	path := flag.String("config", "", "TOML configuration (default: user config directory/promtui/config.toml)")
 	name := flag.String("connection", "", "configured connection name")
-	hist := flag.String("history", filepath.Join(dir, "history.jsonl"), "query history file")
+	hist := flag.String("history", filepath.Join(home, ".local", "share", "promtui", "history.jsonl"), "query history file")
 	window := flag.Duration("range", 0, "start in range mode, e.g. 15m or 168h")
 	start := flag.String("start", "", "range start (RFC3339; requires -end)")
 	end := flag.String("end", "", "fixed evaluation time or range end (RFC3339)")

@@ -134,7 +134,7 @@ func (m *Model) canCopyLabels() bool {
 
 func (m *Model) helpBody() []string {
 	scope := m.mainScope()
-	var lines []string
+	lines := []string{"Alt+0 / Alt+1 / Alt+2  ·  Switch app tabs (0 / 1 / 2 outside text inputs)"}
 	for _, b := range bindings {
 		if b.scope&scope == 0 || !m.available(b, scope) {
 			continue
@@ -206,16 +206,14 @@ func (m *Model) panelView() string {
 			name = "Help · Graph"
 		}
 	}
-	header := lipgloss.NewStyle().Bold(true).Reverse(true).Width(m.width)
-	clip := func(s string) string { return ansi.Truncate(ui.Plain(s), m.width, "…") }
-	lines := []string{header.Render(clip(" " + name))}
+	lines := []string{m.header(promQLTab, name)}
 	body := m.panelBody()
 	start := min(m.offset, max(0, len(body)-m.height+2))
 	lines = append(lines, body[start:min(len(body), start+m.height-2)]...)
 	for len(lines) < m.height-1 {
 		lines = append(lines, "")
 	}
-	return strings.Join(append(lines, m.footer()), "\n")
+	return strings.Join(append(lines, m.promQLFooter()), "\n")
 }
 
 type dialogBounds struct{ x, y, width, height int }

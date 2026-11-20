@@ -57,7 +57,7 @@ func (m *Model) hasVisibleSeries() bool {
 }
 func (m *Model) graphPlace() placement {
 	g := &m.chart
-	if !g.enabled || m.quitting || m.panel&(helpKeys|detailKeys) != 0 || m.popup || m.searching ||
+	if m.activeTab != promQLTab || !g.enabled || m.quitting || m.panel&(helpKeys|detailKeys) != 0 || m.popup || m.searching ||
 		!m.hasVisibleSeries() || m.width < minWidth || m.height < minHeight {
 		return placement{}
 	}

@@ -40,6 +40,11 @@ type completed struct {
 type saved struct{ err error }
 type copied struct{ err error }
 type Model struct {
+	shellState
+	promQLState
+}
+
+type promQLState struct {
 	chart graphState
 	assist
 	opt                                   Options
@@ -48,12 +53,11 @@ type Model struct {
 	entries                               []history.Entry
 	cursor                                int
 	draft                                 string
-	width, height                         int
 	status, summary, notice, historyError string
 	id                                    int
 	requestLabel                          string
 	cancel                                context.CancelFunc
-	saving, dirty, quitting               bool
+	saving, dirty                         bool
 	panels
 }
 
@@ -64,7 +68,9 @@ func New(o Options, entries []history.Entry) *Model {
 	e.CharLimit = 65536
 	e.MaxWidth = 0
 	e.Focus()
-	m := &Model{opt: o, entries: entries, cursor: -1, editor: e, status: "Ready", summary: "No query executed"}
+	m := &Model{promQLState: promQLState{
+		opt: o, entries: entries, cursor: -1, editor: e, status: "Ready", summary: "No query executed",
+	}}
 	m.resize(80, 24)
 	return m
 }
@@ -232,19 +238,27 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Copied"
 		}
 	case tea.PasteMsg:
-		if scope := m.scope(); scope == historyKeys || scope == filterKeys {
+		if m.quitting || m.activeTab != promQLTab {
+			return m, nil
+		} else if scope := m.scope(); scope == historyKeys || scope == filterKeys {
 			m.editFilter(v.Content, false)
 			return m, nil
-		} else if m.quitting || scope != editKeys && scope != completionKeys {
+		} else if scope != editKeys && scope != completionKeys {
 			return m, nil
 		}
 	case tea.KeyPressMsg:
 		if m.quitting {
 			return m, nil
 		}
+		if cmd, handled := m.shellKey(v); handled {
+			return m, cmd
+		}
 		if cmd, handled := m.key(v); handled {
 			return m, cmd
 		}
+	}
+	if m.activeTab != promQLTab {
+		return m, nil
 	}
 	before, pos := m.editor.Value(), editor.Position(m.editor)
 	var cmd tea.Cmd
@@ -351,48 +365,16 @@ func nativeCursor(x, y int) *tea.Cursor {
 	return &tea.Cursor{Position: tea.Position{X: x, Y: y}, Shape: -1}
 }
 
-func (m *Model) renderScreen() (string, *tea.Cursor) {
-	if m.width < minWidth || m.height < minHeight {
-		lines := make([]string, max(1, m.height))
-		lines[0] = ansi.Truncate("Enlarge terminal (24×10)", m.width, "…")
-		if len(lines) > 1 {
-			lines[len(lines)-1] = m.footer()
-		}
-		return strings.Join(lines, "\n"), nil
-	}
+func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	if m.panel != 0 && m.panel&dialogKeys == 0 {
 		return m.panelView(), nil
 	}
 	w := m.workspace()
-	mode := "Instant"
-	if m.opt.Ranged {
-		mode = "Range · " + windowLabel(m.opt.Window)
-	}
-	mode += " · UTC"
-	if !m.opt.End.IsZero() {
-		end := " │ " + m.opt.End.UTC().Format("2006-01-02 15:04")
-		if ansi.StringWidth(" PromTUI  "+mode+end) <= m.width {
-			mode += end
-		}
-	}
-	if m.opt.Ranged && ansi.StringWidth(" PromTUI  "+mode) > m.width {
-		mode = "Range · " + strings.TrimPrefix(windowLabel(m.opt.Window), "Last ") + " UTC"
-	}
 	clip := func(s string) string { return ansi.Truncate(ui.Plain(s), m.width, "…") }
 	inner := m.width - 2
 	status := m.status
 	if m.historyError != "" {
 		status = m.historyError + " · " + status
-	}
-	head := lipgloss.NewStyle().Bold(true).Reverse(true).Width(m.width)
-	left := " PromTUI"
-	if m.opt.Connection.Name != "" {
-		left += " │ " + ui.Plain(m.opt.Connection.Name)
-	}
-	gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(mode)
-	header := left + strings.Repeat(" ", max(2, gap-1)) + mode
-	if gap < 2 {
-		header = ansi.Truncate(left, max(1, m.width-ansi.StringWidth(mode)-2), "…") + "  " + mode
 	}
 	queryRows, x, y := editor.View(m.editor, inner)
 	if w.diagnostic {
@@ -423,7 +405,7 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 				body[0] = "  " + ui.Plain(m.chart.err)
 			case !m.hasVisibleSeries():
 				body[0] = "  No visible series. Use the series selector."
-			case m.panel == 0 && !m.popup && !m.searching && m.graphPlace().cols == 0:
+			case m.activeTab == promQLTab && m.panel == 0 && !m.popup && !m.searching && m.graphPlace().cols == 0:
 				body[0] = "  Enlarge terminal to see the graph."
 			}
 		}
@@ -431,10 +413,10 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 	default:
 		copy(body, strings.Split(m.table.View(inner, room), "\n"))
 	}
-	base := strings.Join([]string{head.Render(clip(header)),
+	base := strings.Join([]string{m.header(promQLTab, m.queryStatus()...),
 		frame("Query", runHint, queryRows, m.width, m.scope() == editKeys), "",
 		frame(name, meta, append(resultRows, body...), m.width, m.scope()&resultKeys != 0),
-		clip(" " + status), m.footer()}, "\n")
+		clip(" " + status), m.promQLFooter()}, "\n")
 	if m.popup || m.searching {
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.menu(1+x, 3+y)).Render(), nil
 	}
