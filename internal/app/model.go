@@ -25,6 +25,7 @@ type Options struct {
 	Graphics              bool
 	ProbeGraphics         bool
 	Connection            config.Connection
+	Connections           []config.Connection
 	Timeout, Window, Step time.Duration
 	End                   time.Time
 	Ranged                bool
@@ -42,6 +43,7 @@ type copied struct{ err error }
 type Model struct {
 	shellState
 	promQLState
+	alerts alertsState
 }
 
 type promQLState struct {
@@ -67,8 +69,7 @@ func New(o Options, entries []history.Entry) *Model {
 	e.Prompt = "│ "
 	e.CharLimit = 65536
 	e.MaxWidth = 0
-	e.Focus()
-	m := &Model{promQLState: promQLState{
+	m := &Model{alerts: newAlertsState(), promQLState: promQLState{
 		opt: o, entries: entries, cursor: -1, editor: e, status: "Ready", summary: "No query executed",
 	}}
 	m.resize(80, 24)
@@ -78,6 +79,7 @@ func (m *Model) resize(w, h int) {
 	m.width, m.height = w, h
 	m.editor.SetWidth(max(8, w-2))
 	m.editor.SetHeight(max(1, min(6, h/4, h-9)))
+	m.alerts.input.SetWidth(max(1, w-13))
 }
 func (m *Model) Init() tea.Cmd {
 	if m.opt.ProbeGraphics {
@@ -150,22 +152,19 @@ func (m *Model) run() tea.Cmd {
 	})
 }
 func (m *Model) recall(delta int) {
-	for i := m.cursor + delta; i < len(m.entries) && i >= -1; i += delta {
-		if i == -1 {
-			m.cursor = i
-			m.editor.SetValue(m.draft)
-			return
-		}
-		if m.entries[i].Connection != m.opt.Connection.Name {
-			continue
-		}
+	i := m.cursor + delta
+	if i < -1 || i >= len(m.entries) {
+		return
+	}
+	if i == -1 {
+		m.editor.SetValue(m.draft)
+	} else {
 		if m.cursor == -1 {
 			m.draft = m.editor.Value()
 		}
-		m.cursor = i
 		m.editor.SetValue(m.entries[i].Query)
-		return
 	}
+	m.cursor = i
 }
 
 var presets = []time.Duration{15 * time.Minute, time.Hour, 6 * time.Hour, 24 * time.Hour, 7 * 24 * time.Hour}
@@ -180,6 +179,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case alertsCompleted:
+		return m, m.onAlertsCompleted(v, time.Now())
+	case alertsTick:
+		return m, m.onAlertsTick(time.Time(v))
+	case alertLabelsCopied:
+		m.alerts.copyStatus = "Copied labels"
+		if v.err != nil {
+			m.alerts.copyStatus = "Could not copy labels"
+		}
+		return m, nil
 	case uv.KittyGraphicsEvent:
 		if m.opt.ProbeGraphics && v.Options.ID == kitty.ProbeID {
 			m.opt.ProbeGraphics = false
@@ -238,6 +247,12 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Copied"
 		}
 	case tea.PasteMsg:
+		if m.pickingConnection {
+			return m, nil
+		}
+		if !m.quitting && m.activeTab == alertsTab && m.alerts.input.Focused() {
+			return m, m.alerts.edit(v)
+		}
 		if m.quitting || m.activeTab != promQLTab {
 			return m, nil
 		} else if scope := m.scope(); scope == historyKeys || scope == filterKeys {
@@ -395,7 +410,11 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	body := make([]string, room)
 	switch {
 	case m.summary == "No query executed":
-		body[0] = "  Run with Ctrl+Enter."
+		if !m.editor.Focused() && m.editor.Value() == "" {
+			body[0] = "  Press i to edit query."
+		} else {
+			body[0] = "  Run with Ctrl+Enter."
+		}
 	case len(m.table.Rows) == 0:
 		body[0] = "  No matching series."
 	case m.chart.enabled:
@@ -416,11 +435,11 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	base := strings.Join([]string{m.header(promQLTab, m.queryStatus()...),
 		frame("Query", runHint, queryRows, m.width, m.scope() == editKeys), "",
 		frame(name, meta, append(resultRows, body...), m.width, m.scope()&resultKeys != 0),
-		clip(" " + status), m.promQLFooter()}, "\n")
+		clip(" " + status), m.footer()}, "\n")
 	if m.popup || m.searching {
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.menu(1+x, 3+y)).Render(), nil
 	}
-	if m.panel&dialogKeys != 0 {
+	if !m.pickingConnection && m.panel&dialogKeys != 0 {
 		if dialog := m.dialogLayer(w); dialog != nil {
 			return lipgloss.NewCompositor(lipgloss.NewLayer(base), dialog).Render(), nil
 		}

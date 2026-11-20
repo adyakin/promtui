@@ -28,7 +28,7 @@ func press(m *Model, codes ...rune) {
 
 func TestEditorAndResultsFocus(t *testing.T) {
 	m := New(Options{}, nil)
-	press(m, 'q', 'g', 's', 'r', 't', '?', tea.KeyEnter, 'u', 'p')
+	press(m, 'i', 'q', 'g', 's', 'r', 't', '?', tea.KeyEnter, 'u', 'p')
 	if got := m.editor.Value(); got != "qgsrt?\nup" || m.quitting {
 		t.Fatal(got)
 	}
@@ -46,16 +46,12 @@ func TestEditorAndResultsFocus(t *testing.T) {
 	}
 	m.popup = true
 	press(m, tea.KeyEsc)
-	if m.popup || !m.editor.Focused() {
-		t.Fatal("Esc should close completion first")
+	if m.popup || m.editor.Focused() || m.editor.Value() != "qgsrt?\nup" {
+		t.Fatal("Esc should close completion and leave editing without changing the query")
 	}
-	press(m, tea.KeyEsc, tea.KeyEsc)
-	if !m.editor.Focused() {
-		t.Fatal("Esc must not leave Query")
-	}
-	press(m, tea.KeyTab, '?')
+	press(m, tea.KeyEsc, '?')
 	if m.editor.Focused() || m.panel != helpKeys {
-		t.Fatal("Tab / ? did not open Results help")
+		t.Fatal("? did not open Results help")
 	}
 	press(m, 'i', tea.KeyTab)
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
@@ -83,6 +79,7 @@ func TestEditorAndResultsFocus(t *testing.T) {
 
 func TestRunDoesNotStealFocusAfterReturningToQuery(t *testing.T) {
 	m := New(Options{}, nil)
+	press(m, 'i')
 	run := tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl}
 	m.Update(run)
 	if !m.editor.Focused() || m.cancel != nil {
@@ -106,8 +103,8 @@ func TestCtrlCQuitsWhenIdle(t *testing.T) {
 	for _, scope := range []keyScope{editKeys, tableKeys, helpKeys} {
 		m := New(Options{}, nil)
 		m.editor.SetValue("up")
-		if scope != editKeys {
-			press(m, tea.KeyTab)
+		if scope == editKeys {
+			press(m, 'i')
 		}
 		if scope == helpKeys {
 			press(m, tea.KeyF1)
@@ -121,6 +118,7 @@ func TestCtrlCQuitsWhenIdle(t *testing.T) {
 
 func TestTabNavigationPreservesPanelState(t *testing.T) {
 	m := New(Options{Graphics: true}, nil)
+	press(m, 'i')
 	const expr = "sum(\n  up\n)"
 	m.editor.SetValue(expr)
 	m.editor.CursorUp()
@@ -215,7 +213,7 @@ func TestResultsShortcutsRunQueries(t *testing.T) {
 			t.Fatal("query did not restore the intended result mode and focus")
 		}
 	}
-	press(m, tea.KeyTab, 'r', tea.KeyDown, tea.KeyEsc)
+	press(m, 'r', tea.KeyDown, tea.KeyEsc)
 	if m.opt.Window != time.Hour || m.opt.Ranged || m.editor.Focused() || m.cancel != nil {
 		t.Fatal("cancel changed query settings or focus")
 	}
@@ -229,7 +227,7 @@ func TestResultsShortcutsRunQueries(t *testing.T) {
 func TestModeShortcutSupersedesInFlightRequest(t *testing.T) {
 	m := New(Options{Graphics: true, Timeout: time.Second}, nil)
 	m.editor.SetValue("up")
-	press(m, tea.KeyTab, 'g')
+	press(m, 'g')
 	oldID := m.id
 	if m.cancel == nil {
 		t.Fatal("graph shortcut did not start a request")
@@ -256,8 +254,8 @@ func sampleResult(ranged bool) query.Result {
 func TestGraphSeriesAndTableActions(t *testing.T) {
 	m := New(Options{Graphics: true}, nil)
 	m.Update(completed{result: sampleResult(true)})
-	press(m, tea.KeyTab, tea.KeyDown)
-	if s := ansi.Strip(m.footer()); !strings.Contains(s, "Tab Query   g Graph   t Table   s Series   r Range   q Quit") {
+	press(m, tea.KeyDown)
+	if s := ansi.Strip(m.footer()); !strings.Contains(s, "i Edit   0–2 Tabs   g Graph   t Table   s Series   r Range   q Quit") {
 		t.Fatal(s)
 	}
 	if !strings.Contains(m.legend(), "› 2/2") {
@@ -322,7 +320,7 @@ func TestGraphSeriesAndTableActions(t *testing.T) {
 func TestSeriesEnterRestoresPreviousVisibility(t *testing.T) {
 	m := New(Options{Graphics: true}, nil)
 	m.Update(completed{result: sampleResult(true)})
-	press(m, tea.KeyTab, 's', tea.KeyDown, tea.KeyEnter)
+	press(m, 's', tea.KeyDown, tea.KeyEnter)
 	if m.chart.visible[0] || !m.chart.visible[1] || !strings.Contains(ansi.Strip(m.footer()), "Enter Restore") {
 		t.Fatal("Enter did not isolate the selected series")
 	}
@@ -336,24 +334,24 @@ func TestFooterAvailability(t *testing.T) {
 	m := New(Options{}, nil)
 	m.resize(110, 24)
 	foot := func() string { return ansi.Strip(m.footer()) }
-	if s := foot(); !strings.Contains(s, "Ctrl+Enter Run") || !strings.Contains(s, "Tab Results") || !strings.Contains(s, "F1 Help") || strings.Contains(s, "Graph") {
+	if s := foot(); !strings.Contains(s, "i Edit   0–2 Tabs   t Table   r Range   q Quit") || strings.Contains(s, "Copy") || strings.Contains(s, "Graph") {
 		t.Fatal(s)
 	}
-	press(m, tea.KeyTab)
-	if s := foot(); !strings.Contains(s, "Tab Query   t Table   r Range   q Quit   i Edit") || strings.Contains(s, "Copy") || strings.Contains(s, "Graph") {
+	press(m, 'i')
+	if s := foot(); !strings.Contains(s, "Ctrl+Enter Run") || !strings.Contains(s, "Tab Results") || !strings.Contains(s, "Esc Back") || strings.Contains(s, "Graph") {
 		t.Fatal(s)
 	}
-	press(m, 'r')
-	if s := foot(); !strings.Contains(s, "Enter Run") || !strings.Contains(s, "Esc Back") || strings.Contains(s, "Tab Query") {
+	press(m, tea.KeyEsc, 'r')
+	if s := foot(); !strings.Contains(s, "Enter Run") || !strings.Contains(s, "Esc Back") || strings.Contains(s, "i Edit") {
 		t.Fatal(s)
 	}
 	press(m, tea.KeyEsc)
 	m.resize(minWidth, minHeight)
-	if s := foot(); !strings.Contains(s, "Tab Query") {
+	if s := foot(); !strings.Contains(s, "i Edit") {
 		t.Fatal(s)
 	}
-	press(m, tea.KeyTab)
-	if s := foot(); !strings.Contains(s, "^Enter Run  Tab Results") {
+	press(m, 'i')
+	if s := foot(); !strings.Contains(s, "^Enter Run  Esc Back") {
 		t.Fatal(s)
 	}
 }

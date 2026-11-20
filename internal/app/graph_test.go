@@ -47,7 +47,7 @@ func TestDialogsKeepGraphPlacementDuringUploadAndResize(t *testing.T) {
 	m := New(Options{Graphics: true}, nil)
 	_, render := m.Update(completed{result: sampleResult(true)})
 	_, upload := m.Update(render())
-	press(m, tea.KeyTab, tea.KeyDown, 's')
+	press(m, tea.KeyDown, 's')
 	initial := m.chart.displayed
 	if _, cmd := m.Update(upload()); cmd != nil || m.graphPlace() != initial || m.chart.selected != 1 {
 		t.Fatal("opening the selector disturbed the in-flight placement or selection")

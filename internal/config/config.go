@@ -10,7 +10,10 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-type Connection struct{ Name, URL string }
+type Connection struct {
+	Name, URL       string
+	AlertmanagerURL string `toml:"alertmanager_url"`
+}
 
 type Config struct {
 	General struct {
@@ -34,7 +37,7 @@ func Load(path string, optional bool) (Config, error) {
 		return c, err
 	}
 	if len(c.Connections) == 0 {
-		c.Connections = []Connection{{"local", "http://localhost:9090"}}
+		c.Connections = []Connection{{Name: "local", URL: "http://localhost:9090"}}
 	}
 	if c.General.Default == "" {
 		c.General.Default = c.Connections[0].Name

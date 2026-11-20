@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -22,38 +23,69 @@ var tabs = [...]struct {
 	name, heading, description string
 }{
 	promQLTab:  {name: "PromQL"},
-	alertsTab:  {"Alerts", "Active Alerts", "Alert exploration will be implemented in a future milestone."},
+	alertsTab:  {name: "Alerts"},
 	targetsTab: {"Targets", "Scrape Targets", "Target exploration will be implemented in a future milestone."},
 }
 
 type shellState struct {
-	activeTab     tabID
-	width, height int
-	quitting      bool
+	activeTab         tabID
+	width, height     int
+	quitting          bool
+	pickingConnection bool
+	connectionRow     int
 }
 
 func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
+	if len(m.opt.Connections) > 0 {
+		switch k := key.Keystroke(); {
+		case m.pickingConnection && k != "ctrl+q" && k != "ctrl+c":
+			return m.connectionKey(k), true
+		case !m.pickingConnection && (k == "alt+c" || k == "c" && !m.textInputFocused()):
+			m.openConnections()
+			return nil, true
+		}
+	}
 	if key.Code >= '0' && key.Code < '0'+rune(len(tabs)) {
 		if key.Mod == tea.ModAlt || key.Mod == 0 && !m.textInputFocused() {
-			m.activeTab = tabID(key.Code - '0')
+			next := tabID(key.Code - '0')
+			if next != m.activeTab {
+				if m.activeTab == alertsTab {
+					m.alerts.stop()
+				}
+				m.activeTab = next
+				if next == alertsTab {
+					return m.alertsOnEntry(time.Now()), true
+				}
+			}
 			return nil, true
 		}
 	}
 	switch key.String() {
 	case "ctrl+c":
+		if m.activeTab == alertsTab && m.alerts.cancel != nil {
+			m.alerts.stop()
+			m.alerts.err = errAlertsCancelled
+			m.alerts.lastDone = time.Now()
+			return m.scheduleAlertsTick(m.alerts.lastDone), true
+		}
 		return m.act("cancelOrQuit", "", 0), true
 	case "ctrl+q":
 		return m.act("quit", "", 0), true
 	case "q":
-		if m.activeTab != promQLTab {
+		if m.activeTab == targetsTab {
 			return m.act("quit", "", 0), true
 		}
 	}
-	// Placeholders have one panel and no local key bindings.
-	return nil, m.activeTab != promQLTab
+	if m.activeTab == alertsTab {
+		return m.alertsKey(key), true
+	}
+	return nil, m.activeTab == targetsTab
 }
 
 func (m *Model) textInputFocused() bool {
+	if m.activeTab == alertsTab {
+		return m.alerts.input.Focused()
+	}
 	if m.activeTab != promQLTab {
 		return false
 	}
@@ -65,10 +97,19 @@ func (m *Model) textInputFocused() bool {
 }
 
 func (m *Model) footer() string {
+	if m.pickingConnection {
+		return m.formatFooter([]string{"↑↓ Select", "Enter Switch"}, "Esc Back", "   ")
+	}
 	if m.activeTab == promQLTab {
 		return m.promQLFooter()
 	}
+	if m.activeTab == alertsTab {
+		return m.alertsFooter()
+	}
 	hints := []string{"0–2 Tabs", "q Quit"}
+	if len(m.opt.Connections) > 0 {
+		hints = append([]string{m.connectionHint()}, hints...)
+	}
 	if m.cancel != nil {
 		hints = append(hints, "Ctrl+C Cancel")
 	}
@@ -137,13 +178,17 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 		return strings.Join(lines, "\n"), nil
 	}
 	// A queued upload cannot be interrupted. Keep the old workspace visible
-	// until Bubble Tea has queued the delete, so images never cover a placeholder.
+	// until Bubble Tea has queued the delete, so images never cover another tab.
 	if m.activeTab == promQLTab || m.chart.displayed.cols != 0 || m.chart.sending {
 		screen, cursor := m.promQLScreen()
 		if m.activeTab != promQLTab {
 			cursor = nil
 		}
-		return screen, cursor
+		return m.withConnectionPicker(screen, cursor, m.workspace())
+	}
+	if m.activeTab == alertsTab {
+		screen, cursor := m.alertsScreen(time.Now())
+		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
 	}
 	tab := tabs[m.activeTab]
 	rows := make([]string, m.height-4)
@@ -161,5 +206,6 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 	for i, line := range wrapped[:min(len(wrapped), len(rows)-start)] {
 		rows[start+i] = "  " + line
 	}
-	return strings.Join([]string{m.header(m.activeTab), frame(tab.name, "", rows, m.width, true), m.footer()}, "\n"), nil
+	screen := strings.Join([]string{m.header(m.activeTab), frame(tab.name, "", rows, m.width, true), m.footer()}, "\n")
+	return m.withConnectionPicker(screen, nil, workspace{resultY: 1, bottomY: m.height - 3})
 }

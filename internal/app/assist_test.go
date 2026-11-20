@@ -32,6 +32,7 @@ func TestCompleteFuzzyMetricPhrase(t *testing.T) {
 		{tea.KeyPressMsg{Code: ' ', Mod: tea.ModCtrl}, "node cpu load ", "node_cpu_load_average "},
 	} {
 		m := New(Options{Connection: config.Connection{URL: server.URL}}, nil)
+		press(m, 'i')
 		m.editor.SetValue(tc.draft)
 		_, analyze := m.Update(tc.input)
 		msg := analyze()
@@ -60,6 +61,7 @@ func TestCompleteFuzzyMetricPhrase(t *testing.T) {
 
 func TestMidTokenAcceptance(t *testing.T) {
 	m := New(Options{}, nil)
+	press(m, 'i')
 	m.editor.SetValue("sum(\nnode_foo + up\n)")
 	m.editor.CursorUp()
 	m.editor.SetCursorColumn(4)
@@ -93,6 +95,7 @@ func TestCacheAndStaleResponse(t *testing.T) {
 }
 func TestHistoryFuzzyRestoreWithoutExecuting(t *testing.T) {
 	m := New(Options{Connection: config.Connection{Name: "A"}}, []history.Entry{{Connection: "B", Query: "vector(12)"}, {Connection: "A", Query: "vector(42)"}})
+	press(m, 'i')
 	m.editor.SetValue("draft")
 	m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
@@ -105,12 +108,15 @@ func TestHistoryFuzzyRestoreWithoutExecuting(t *testing.T) {
 		t.Fatal("Esc did not restore Query from History")
 	}
 	m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
-	m.Update(tea.PasteMsg{Content: "v42"})
-	if !slices.Equal(m.options, []string{"vector(42)"}) {
+	if !slices.Equal(m.options, []string{"vector(12)", "vector(42)"}) {
+		t.Fatal(m.options)
+	}
+	m.Update(tea.PasteMsg{Content: "v12"})
+	if !slices.Equal(m.options, []string{"vector(12)"}) {
 		t.Fatal(m.options)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.editor.Value() != "vector(42)" || m.cancel != nil || m.searching {
+	if m.editor.Value() != "vector(12)" || m.cancel != nil || m.searching {
 		t.Fatal(m.screen())
 	}
 }

@@ -42,6 +42,7 @@ func TestScopedMenuLayout(t *testing.T) {
 
 func TestNativeCursorFollowsVisibleQueryPosition(t *testing.T) {
 	m := New(Options{}, nil)
+	press(m, 'i')
 	m.resize(minWidth, minHeight)
 	m.editor.SetValue("up\n" + strings.Repeat("界", 30))
 	v := m.View()
@@ -60,11 +61,11 @@ func TestNativeCursorFollowsVisibleQueryPosition(t *testing.T) {
 	if m.View().Cursor != nil {
 		t.Fatal("native cursor visible through the completion overlay")
 	}
-	press(m, tea.KeyEsc, tea.KeyTab)
+	press(m, tea.KeyEsc)
 	if m.View().Cursor != nil {
 		t.Fatal("native cursor visible while Results is focused")
 	}
-	press(m, tea.KeyTab)
+	press(m, 'i')
 	if c := m.View().Cursor; c == nil || c.X != 9 || c.Y != 2 {
 		t.Fatalf("query focus did not restore the native cursor: %+v", c)
 	}
@@ -80,7 +81,6 @@ func TestFloatingDialogsFitAndKeepWorkspace(t *testing.T) {
 			r.Series = append(r.Series, r.Series[0])
 		}
 		m.Update(completed{result: r})
-		press(m, tea.KeyTab)
 		w := m.workspace()
 		check := func(title string) {
 			t.Helper()
@@ -152,7 +152,7 @@ func TestLabelsInspectorScrollsAndKeepsUnabridgedLabels(t *testing.T) {
 	}
 	r.Series[1].Metric, r.Series[1].Labels = metric, metric.String()
 	m.Update(completed{result: r})
-	press(m, tea.KeyTab, tea.KeyDown, 'l')
+	press(m, tea.KeyDown, 'l')
 	if m.labelText != metric.String() || len(m.labelFields) != len(metric) ||
 		m.labelFields[0].name != "cluster" || m.labelFields[6].name != "zone" {
 		t.Fatal("labels were lost, reformatted for copying, or not sorted")
@@ -177,6 +177,7 @@ func TestLabelsInspectorScrollsAndKeepsUnabridgedLabels(t *testing.T) {
 
 func TestGraphLegendAndFooterFitSmallScreen(t *testing.T) {
 	m := New(Options{Graphics: true, Window: 6 * time.Hour, Ranged: true}, nil)
+	press(m, 'i')
 	m.resize(24, 10)
 	m.editor.SetValue("up\nup")
 	m.diagnostic, m.notice = "diagnostic", "notice"

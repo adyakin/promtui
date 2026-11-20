@@ -10,7 +10,9 @@ max_series = 500
 [[connections]]
 name = "local"
 url = "http://localhost:9090"
+# alertmanager_url = "http://localhost:9093"
 
 [[connections]]
 name = "cluster"
 url = "http://vmselect:8481/select/0/prometheus"
+# alertmanager_url = "https://monitoring.example.org/alertmanager"

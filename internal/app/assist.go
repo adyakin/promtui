@@ -171,11 +171,9 @@ func (m *Model) accept() {
 	m.editor.SetCursorColumn(col + utf8.RuneCountInString(v))
 }
 func (m *Model) searchHistory() {
-	var items []string
+	items := make([]string, 0, len(m.entries))
 	for _, e := range m.entries {
-		if e.Connection == m.opt.Connection.Name {
-			items = append(items, e.Query)
-		}
+		items = append(items, e.Query)
 	}
 	m.options = items
 	if m.searchText != "" {

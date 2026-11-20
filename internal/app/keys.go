@@ -43,13 +43,12 @@ var bindings = []binding{
 	{"results", "tab shift+tab", "Tab / Shift+Tab", "Tab Results", editKeys},
 	{"history", "ctrl+r", "Ctrl+R", "Ctrl+R History", editKeys | completionKeys},
 	{"complete", "ctrl+space ctrl+@", "Ctrl+Space", "Ctrl+Space Complete", editKeys | completionKeys},
-	{"edit", "tab shift+tab", "Tab / Shift+Tab", "Tab Query", resultKeys},
+	{"edit", "i tab shift+tab", "i / Tab / Shift+Tab", "i Edit", resultKeys},
 	{"graph", "g", "g", "g Graph", resultKeys},
 	{"table", "t", "t", "t Table", resultKeys},
 	{"series", "s", "s", "s Series", resultKeys},
 	{"range", "r", "r", "r Range", resultKeys},
 	{"quit", "q", "q", "q Quit", resultKeys},
-	{"edit", "i", "i", "i Edit", resultKeys},
 	{"select", "up down", "↑ / ↓", "↑↓ Select", resultKeys | rangeKeys | seriesKeys},
 	{"toggle", "space", "Space", "Space Toggle", graphKeys | seriesKeys},
 	{"expand", "enter", "Enter", "Enter Expand", tableKeys},
@@ -68,7 +67,7 @@ var bindings = []binding{
 	{"inspectCopy", "y", "y", "y Copy labels", labelKeys},
 	{"scroll", "up down pgup pgdown", "↑ / ↓ / PgUp / PgDn", "↑↓ Scroll", scrollKeys},
 	{"cancelOrQuit", "ctrl+c", "Ctrl+C", "Ctrl+C Quit", allKeys},
-	{"back", "esc", "Esc", "Esc Back", allKeys &^ mainKeys},
+	{"back", "esc", "Esc", "Esc Back", allKeys &^ resultKeys},
 	{"help", "f1", "F1", "F1 Help", editKeys | completionKeys},
 	{"help", "f1 ?", "F1 / ?", "? Help", resultKeys},
 	{"status", "f2", "F2", "F2 Status", mainKeys},
@@ -154,7 +153,7 @@ func (m *Model) promQLFooter() string {
 	var hints []string
 	reserved := ""
 	gap := "   "
-	compact := scope == editKeys && m.width < 1+len(runHint)+len(gap)+len("Tab Results")
+	compact := scope == editKeys && m.width < 1+len(runHint)+len("Tab Results")+len("Esc Back")+2*len(gap)
 	if compact {
 		gap = "  "
 	}
@@ -189,13 +188,16 @@ func (m *Model) promQLFooter() string {
 			reserved = hint
 		} else {
 			hints = append(hints, hint)
+			if len(m.opt.Connections) > 0 && (b.id == "results" || b.id == "edit") {
+				hints = append(hints, m.connectionHint())
+			}
 			if b.id == "results" {
 				hints = append(hints, "Alt+0–2 Tabs")
 			}
+			if b.id == "edit" {
+				hints = append(hints, "0–2 Tabs")
+			}
 		}
-	}
-	if scope&resultKeys != 0 {
-		hints = append(hints, "0–2 Tabs")
 	}
 	return m.formatFooter(hints, reserved, gap)
 }
@@ -272,6 +274,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	case "quit":
 		m.dismiss()
 		m.stop()
+		m.alerts.stop()
 		m.quitting = true
 	case "run":
 		m.dismiss()
@@ -287,7 +290,10 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		return m.editor.Focus()
 	case "back":
 		switch scope {
-		case completionKeys, historyKeys:
+		case editKeys, completionKeys:
+			m.dismiss()
+			m.editor.Blur()
+		case historyKeys:
 			m.dismiss()
 		case filterKeys:
 			m.seriesFilter = m.filterDraft

@@ -135,6 +135,9 @@ func (m *Model) canCopyLabels() bool {
 func (m *Model) helpBody() []string {
 	scope := m.mainScope()
 	lines := []string{"Alt+0 / Alt+1 / Alt+2  ·  Switch app tabs (0 / 1 / 2 outside text inputs)"}
+	if len(m.opt.Connections) > 0 {
+		lines = append(lines, "c / Alt+C  ·  Switch connection (Alt+C while typing)")
+	}
 	for _, b := range bindings {
 		if b.scope&scope == 0 || !m.available(b, scope) {
 			continue
@@ -213,7 +216,7 @@ func (m *Model) panelView() string {
 	for len(lines) < m.height-1 {
 		lines = append(lines, "")
 	}
-	return strings.Join(append(lines, m.promQLFooter()), "\n")
+	return strings.Join(append(lines, m.footer()), "\n")
 }
 
 type dialogBounds struct{ x, y, width, height int }
@@ -227,6 +230,13 @@ func (m *Model) dialogBounds(w workspace) dialogBounds {
 		width = min(width, m.width-2)
 		height = min(height, resultHeight)
 		return dialogBounds{(m.width - width) / 2, w.resultY + (resultHeight-height)/2, width, height}
+	}
+	if m.pickingConnection {
+		width := 28
+		for _, c := range m.opt.Connections {
+			width = max(width, ansi.StringWidth(ui.Plain(c.Name))+16)
+		}
+		return centered(min(60, width), len(m.opt.Connections)+2)
 	}
 	switch m.panel {
 	case rangeKeys:
@@ -292,6 +302,18 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 		return min(max(0, selected-room/2), max(0, count-room))
 	}
 
+	if m.pickingConnection {
+		room := d.height - 2
+		first := start(m.connectionRow, len(m.opt.Connections), room)
+		for i := first; i < min(first+room, len(m.opt.Connections)); i++ {
+			text := ui.Plain(m.opt.Connections[i].Name)
+			if m.opt.Connections[i].Name == m.opt.Connection.Name {
+				text += " (current)"
+			}
+			row(text, "", i == m.connectionRow)
+		}
+		return lipgloss.NewLayer(renderFrame("Connections", "", lines, d.width, true, dialogSurface)).X(d.x).Y(d.y).Z(1)
+	}
 	switch m.panel {
 	case rangeKeys:
 		name = "Time range"

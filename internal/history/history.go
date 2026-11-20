@@ -26,7 +26,7 @@ func Add(entries []Entry, e Entry, limit int) []Entry {
 		if len(out) == limit {
 			break
 		}
-		if e.Query != old.Query || e.Connection != old.Connection {
+		if e.Query != old.Query {
 			out = append(out, old)
 		}
 	}
@@ -48,12 +48,16 @@ func Load(path string, limit int) ([]Entry, error) {
 	s := bufio.NewScanner(f)
 	s.Buffer(make([]byte, 4096), 1<<20)
 	var out []Entry
-	for len(out) < limit && s.Scan() {
+	seen := make(map[string]bool)
+	for line := 1; len(out) < limit && s.Scan(); line++ {
 		var e Entry
 		if err := json.Unmarshal(s.Bytes(), &e); err != nil {
-			return nil, fmt.Errorf("history line %d: %w", len(out)+1, err)
+			return nil, fmt.Errorf("history line %d: %w", line, err)
 		}
-		out = append(out, e)
+		if !seen[e.Query] {
+			seen[e.Query] = true
+			out = append(out, e)
+		}
 	}
 	return out, s.Err()
 }

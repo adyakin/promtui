@@ -19,9 +19,41 @@ func pressAlt(m *Model, code rune) tea.Cmd {
 	return cmd
 }
 
+func TestStartupShortcutsAndEditing(t *testing.T) {
+	conn := config.Connection{Name: "local"}
+	m := New(Options{Connection: conn, Connections: []config.Connection{conn}}, nil)
+	if m.editor.Focused() || m.View().Cursor != nil || !strings.Contains(ansi.Strip(m.footer()), "i Edit") {
+		t.Fatal("PromQL did not start in navigation mode")
+	}
+	press(m, 'c')
+	if !m.pickingConnection {
+		t.Fatal("c did not open Connections at startup")
+	}
+	press(m, tea.KeyEsc)
+	for i, code := range "120" {
+		press(m, code)
+		if m.activeTab != []tabID{alertsTab, targetsTab, promQLTab}[i] || m.editor.Value() != "" {
+			t.Fatal("bare digit did not switch tabs before editing")
+		}
+	}
+	press(m, 'i', '1', '2', '0', 'c')
+	pos := editor.Position(m.editor)
+	if !m.editor.Focused() || m.activeTab != promQLTab || m.editor.Value() != "120c" {
+		t.Fatal("navigation shortcuts intercepted editor text")
+	}
+	press(m, tea.KeyEsc, '2', '0')
+	if m.editor.Focused() || m.activeTab != promQLTab || m.editor.Value() != "120c" {
+		t.Fatal("Esc did not return to navigation without changing the draft")
+	}
+	press(m, 'i')
+	if !m.editor.Focused() || editor.Position(m.editor) != pos {
+		t.Fatal("returning to editing lost the cursor")
+	}
+}
+
 func TestShellRoutesDigitsAroundTextInputs(t *testing.T) {
 	m := New(Options{}, nil)
-	press(m, '0', '1', '2')
+	press(m, 'i', '0', '1', '2')
 	if m.activeTab != promQLTab || m.editor.Value() != "012" {
 		t.Fatal("bare digits did not reach the editor")
 	}
@@ -38,7 +70,7 @@ func TestShellRoutesDigitsAroundTextInputs(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	m.Update(tea.PasteMsg{Content: "discard this"})
 	if m.activeTab != alertsTab || m.cancel != nil {
-		t.Fatal("placeholder routed input to PromQL")
+		t.Fatal("Alerts routed input to PromQL")
 	}
 	press(m, '2', '0')
 	if m.activeTab != promQLTab || m.editor.Value() != "0122" || m.View().Cursor == nil {
@@ -96,7 +128,7 @@ func TestShellLayoutAndFooterOnResize(t *testing.T) {
 	}
 	check([2]int{100, 24}, "q1q1", "0 PromQL", "1 Alerts", "2 Targets", "Range · Last 1h", runHint)
 	pressAlt(m, '1')
-	check([2]int{100, 24}, "╭─ › Alerts", "Active Alerts", "Connection: q1q1", "0–2 Tabs", "q Quit")
+	check([2]int{100, 24}, "╭─ › Alerts", "PromTUI q1q1", "Set alertmanager_url", "0–2 Tabs", "q Quit")
 	if !strings.Contains(m.screen(), activeTabStyle.Render(" 1 Alerts ")) ||
 		strings.Contains(m.footer(), "Run") || strings.Contains(m.footer(), "History") {
 		t.Fatal("Alerts is not highlighted or displays PromQL actions")
@@ -105,6 +137,7 @@ func TestShellLayoutAndFooterOnResize(t *testing.T) {
 	check([2]int{24, 10}, "╭─ › Targets", "Connection: q1q1", "Scrape Targets", "in a future", "milestone.", "0–2 Tabs")
 	check([2]int{19, 6}, "Enlarge terminal", "0–2 Tabs")
 	press(m, '0')
+	press(m, 'i')
 	check([2]int{70, 18}, "╭─ › Query", "Tab Results")
 	if m.View().Cursor == nil {
 		t.Fatal("Query did not resume after resizing on Targets")
@@ -120,7 +153,7 @@ func TestTabSwitchDoesNotRequeryOrChangeTableState(t *testing.T) {
 	pos := editor.Position(m.editor)
 	result := sampleResult(false)
 	m.Update(completed{result: result})
-	press(m, tea.KeyTab, tea.KeyDown, tea.KeyEnter)
+	press(m, tea.KeyDown, tea.KeyEnter)
 	table, id := m.table, m.id
 	for _, code := range "120120" {
 		if _, cmd := m.Update(tea.KeyPressMsg{Code: code, Text: string(code)}); cmd != nil {
@@ -148,7 +181,7 @@ func TestTabSwitchDoesNotRequeryOrChangeTableState(t *testing.T) {
 func TestShellClearsAndRestoresKittyPlacement(t *testing.T) {
 	m := New(Options{Graphics: true, Ranged: true, Window: time.Hour}, nil)
 	_, render := m.Update(completed{result: sampleResult(true)})
-	press(m, tea.KeyTab, tea.KeyDown, tea.KeySpace)
+	press(m, tea.KeyDown, tea.KeySpace)
 	_, render = m.Update(render()) // discard initial render invalidated by visibility change
 	_, upload := m.Update(render())
 

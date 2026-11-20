@@ -30,10 +30,18 @@ func TestCancelIgnoresLateCompletionAndKeepsResults(t *testing.T) {
 	}
 }
 func TestRecallAcrossConnectionsRestoresDraft(t *testing.T) {
-	m := New(Options{Connection: config.Connection{Name: "A"}}, []history.Entry{{Connection: "B", Query: "skip"}, {Connection: "A", Query: "sum(\nup)"}})
+	m := New(Options{Connection: config.Connection{Name: "A"}}, []history.Entry{{Connection: "B", Query: "up"}, {Connection: "A", Query: "sum(\nup)"}})
 	m.editor.SetValue("unfinished")
 	m.recall(1)
+	if m.editor.Value() != "up" {
+		t.Fatal(m.editor.Value())
+	}
+	m.recall(1)
 	if m.editor.Value() != "sum(\nup)" {
+		t.Fatal(m.editor.Value())
+	}
+	m.recall(-1)
+	if m.editor.Value() != "up" {
 		t.Fatal(m.editor.Value())
 	}
 	m.recall(-1)
