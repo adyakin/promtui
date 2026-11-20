@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -19,22 +21,33 @@ func defaultDirs(home string) (configDir, dataDir string) {
 		filepath.Join(home, ".local", "share", "promtui")
 }
 
-func run() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+func run(args []string, stdout io.Writer) error {
+	if len(args) == 1 && args[0] == "version" {
+		return printVersion(stdout)
 	}
+	home, homeErr := os.UserHomeDir()
 	dir, dataDir := defaultDirs(home)
-	path := flag.String("config", "", "configuration file (.yaml, .yml, or .toml; default: first match in ~/.config/promtui/)")
-	name := flag.String("connection", "", "configured connection name")
-	hist := flag.String("history", filepath.Join(dataDir, "history.jsonl"), "query history file")
-	window := flag.Duration("range", 0, "start in range mode, e.g. 15m or 168h")
-	start := flag.String("start", "", "range start (RFC3339; requires -end)")
-	end := flag.String("end", "", "fixed evaluation time or range end (RFC3339)")
-	step := flag.Duration("step", 0, "range step (default: automatic)")
-	graphics := flag.String("graphics", "auto", "range graphs: auto (Rex/Kitty), kitty, or off")
-	flag.Parse()
-	var cfg config.Config
+	flags := flag.NewFlagSet("promtui", flag.ExitOnError)
+	path := flags.String("config", "", "configuration file (.yaml, .yml, or .toml; default: first match in ~/.config/promtui/)")
+	name := flags.String("connection", "", "configured connection name")
+	hist := flags.String("history", filepath.Join(dataDir, "history.jsonl"), "query history file")
+	window := flags.Duration("range", 0, "start in range mode, e.g. 15m or 168h")
+	start := flags.String("start", "", "range start (RFC3339; requires -end)")
+	end := flags.String("end", "", "fixed evaluation time or range end (RFC3339)")
+	step := flags.Duration("step", 0, "range step (default: automatic)")
+	graphics := flags.String("graphics", "auto", "range graphs: auto (Rex/Kitty), kitty, or off")
+	showVersion := flags.Bool("version", false, "print the PromTUI version and exit")
+	flags.Parse(args)
+	if *showVersion {
+		return printVersion(stdout)
+	}
+	if homeErr != nil {
+		return homeErr
+	}
+	var (
+		cfg config.Config
+		err error
+	)
 	if *path == "" {
 		cfg, err = config.LoadDefault(dir)
 	} else {
@@ -104,8 +117,47 @@ func run() error {
 }
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "promtui:", err)
 		os.Exit(1)
 	}
+}
+
+// version is set by GoReleaser for releases and snapshots.
+var version string
+
+func printVersion(w io.Writer) error {
+	info, _ := debug.ReadBuildInfo()
+	_, err := fmt.Fprintln(w, "promtui", buildVersion(version, info))
+	return err
+}
+
+func buildVersion(version string, info *debug.BuildInfo) string {
+	if version != "" {
+		return version
+	}
+	if info == nil {
+		return "devel"
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	var revision string
+	var dirty bool
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			dirty = setting.Value == "true"
+		}
+	}
+	v := "devel"
+	if revision != "" {
+		v += "+" + revision[:min(len(revision), 12)]
+	}
+	if dirty {
+		v += "-dirty"
+	}
+	return v
 }
