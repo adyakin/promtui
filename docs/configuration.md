@@ -1,10 +1,10 @@
 # Configuration
 
-YAML is the preferred format. Without `-config`, PromTUI checks the `promtui`
-subdirectory of Go's [user config directory](https://pkg.go.dev/os#UserConfigDir)
-for `config.yaml`, `config.yml`, then `config.toml`. The first file found wins;
-if it cannot be read or parsed, PromTUI reports the error without trying a lower
-priority file. If none exists, PromTUI uses the built-in defaults.
+YAML is the preferred format. Without `-config`, PromTUI checks
+`~/.config/promtui` on macOS and Linux for `config.yaml`, `config.yml`, then
+`config.toml`. The first file found wins; if it cannot be read or parsed,
+PromTUI reports the error without trying a lower priority file. If none exists,
+PromTUI uses the built-in defaults.
 
 An explicit `-config PATH` loads only that file, choosing the parser by
 extension. Existing TOML configs need no conversion. To switch to YAML, copy

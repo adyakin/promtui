@@ -10,7 +10,7 @@ go run ./cmd/promtui -config config.example.toml -connection cluster -range 15m
 go run ./cmd/promtui -start 2026-11-18T09:00:00Z -end 2026-11-18T10:00:00Z -step 30s
 ```
 
-Start without configuration for `http://localhost:9090`. For named backends, copy `config.example.toml` to `promtui/config.toml` under Go's `os.UserConfigDir()` (`~/Library/Application Support` on macOS; `$XDG_CONFIG_HOME` or `~/.config` on Linux). History defaults to `history.jsonl` in the same directory; override with `-history`. `[general].history_limit = 0` disables history. Set `[query].timeout`, `default_range`, and `max_series` in TOML. Duration options use Go syntax (`168h` for seven days). Connection changes and absolute times are startup options.
+Start without configuration for `http://localhost:9090`. For named backends, copy `config.example.toml` to `~/.config/promtui/config.toml` on macOS or Linux. History defaults to `~/.local/share/promtui/history.jsonl`; override with `-history`. `[general].history_limit = 0` disables history. Set `[query].timeout`, `default_range`, and `max_series` in TOML. Duration options use Go syntax (`168h` for seven days). Connection changes and absolute times are startup options.
 
 Try `vector(42)` against a running backend even if it hasn't scraped any targets. For instant queries `-end` fixes the evaluation time; otherwise each execution evaluates at the current time. For range queries it anchors the window. Automatic step targets about 240 intervals, with a one-second minimum; an explicit `-step` overrides it.
 
