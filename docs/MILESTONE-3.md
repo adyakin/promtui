@@ -6,7 +6,7 @@ Run `make run` in Rex, switch to range mode with Ctrl+T and execute:
 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])))
 ```
 
-The chart uses the successful query’s requested time domain and step, even if the editor’s time settings are changed afterward. Ctrl+W selects the next window; execute to apply. F4 toggles graph/table without refetching. Esc focuses results; `g` also toggles the view there. Up/down selects the legend entry and Space toggles visibility (`●` / `○`). The first eight series start visible, and all returned series are available in the legend. Instant queries always display as tables.
+The chart uses the successful query’s requested time domain and step, even if the editor’s time settings are changed afterward. Esc focuses Results, where `r` opens the time-range selector and `g` / `t` select Graph / Table. Up/down selects the legend entry and Space toggles visibility (`●` / `○`). The first eight series start visible, and all returned series are available in the legend. Instant queries always display as tables.
 
 ## Implementation
 

@@ -66,7 +66,8 @@ func TestShellRoutesDigitsAroundTextInputs(t *testing.T) {
 	if m.activeTab != alertsTab || m.View().Cursor != nil {
 		t.Fatal("Alt+1 did not switch away from the editor")
 	}
-	press(m, tea.KeyEsc, tea.KeyTab, tea.KeyF5, 'i')
+	press(m, tea.KeyEsc, tea.KeyTab, 'i')
+	m.Update(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	m.Update(tea.PasteMsg{Content: "discard this"})
 	if m.activeTab != alertsTab || m.cancel != nil {

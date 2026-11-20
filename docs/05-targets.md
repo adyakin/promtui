@@ -150,10 +150,9 @@ An unavailable source does not mean its targets are DOWN.
 
 When a source refresh fails:
 
-- Preserve its last successful data.
-- Mark that data as stale.
-- Show the source error.
-- Exclude stale data from current-health totals, or clearly distinguish it from fresh data.
+- Preserve its last successful data in the cache, but do not show stale rows or count them in current-health totals.
+- Replace the table with wrapped, scrollable errors for the current source selection.
+- Keep the source selector available so users can switch to a healthy source.
 
 When a source recovers, replace its stale data with the new response.
 

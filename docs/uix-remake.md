@@ -29,7 +29,7 @@ The context-sensitive footer must advertise `Tab` as the navigation shortcut in 
 
 Query:
 
-`F5 Run   Tab Results   Ctrl+R History   Ctrl+Space Complete`
+`Ctrl+Enter Run   Tab Results   Ctrl+R History   Ctrl+Space Complete`
 
 Results:
 

@@ -137,22 +137,23 @@ Global shortcuts must work regardless of the focused component, except where a t
 
 | Key | Action |
 |---|---|
-| `F5` | Execute query |
+| `Ctrl+G` | Execute query |
 | `Ctrl+Enter` | Execute query, if supported |
-| `F1` | Context-sensitive help |
+| `?` | Context-sensitive help outside text inputs |
+| `Alt+S` | Request status |
 | `Ctrl+Q` | Quit application |
 | `Ctrl+C` | Cancel active query, or quit if idle |
 | `Esc` | Context-dependent Back/Close |
 
 While a query is running, `Ctrl+C` cancels it without quitting. Press `Ctrl+C` again to quit.
 
-If `Ctrl+Enter` cannot be reliably detected in Rex, `F5` remains the primary execution shortcut.
+Use `Ctrl+G` on terminals that cannot distinguish `Ctrl+Enter` from `Enter`. Do not bind function keys.
 
 ### 4.2 Query Editor shortcuts
 
 | Key | Action |
 |---|---|
-| `F5` | Execute query |
+| `Ctrl+G` | Execute query |
 | `Ctrl+Enter` | Execute query, if supported |
 | `Enter` | Insert newline |
 | `Tab` / `Shift+Tab` | Focus Results |
@@ -160,7 +161,6 @@ If `Ctrl+Enter` cannot be reliably detected in Rex, `F5` remains the primary exe
 | `Ctrl+R` | Search query history |
 | `Alt+Up` | Previous query |
 | `Alt+Down` | Next query |
-| `F1` | Help |
 
 When autocomplete is open, Tab accepts the selected suggestion rather than changing focus.
 
@@ -179,7 +179,7 @@ History navigation must preserve an unfinished query so it can be restored.
 | `y` | Copy selected value |
 | `?` | Help |
 | `q` | Quit |
-| `F5` | Re-execute query |
+| `Ctrl+Enter` / `Ctrl+G` | Re-execute query |
 
 Single-character shortcuts are active only in Results or appropriate overlays.
 
@@ -237,7 +237,7 @@ It is the primary mechanism for discovering available actions.
 ### 5.2 Example: Query Editor
 
 ```text
-F5 Run   Tab Results   ^R History   ^Space Complete   F1 Help
+^Enter Run   Tab Results   ^R History   ^Space Complete
 ```
 
 ### 5.3 Example: Graph
@@ -297,7 +297,7 @@ The main screen should prioritize the PromQL editor and query results.
 ┌─────────────────────────────────────────────────────┐
 │ PromTUI │ production           Range · Last 6h · UTC │
 ├─────────────────────────────────────────────────────┤
-│ QUERY                                     F5 Run     │
+│ QUERY                                 ^Enter Run     │
 │                                                     │
 │ 100 * (1 - avg by (instance) (                      │
 │   rate(node_cpu_seconds_total{mode="idle"}[5m])     │

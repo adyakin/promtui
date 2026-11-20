@@ -164,7 +164,7 @@ func TestStartingQueryDeletesInFlightKittyPlacement(t *testing.T) {
 	m.editor.SetValue("up")
 	_, render := m.Update(completed{result: sampleResult(true)})
 	_, upload := m.Update(render())
-	press(m, tea.KeyF5)
+	m.Update(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
 	// A previous upload already queued in Tea must be acknowledged before
 	// sending the delete, or it could repaint a stale image afterward.
 	_, clear := m.Update(upload())

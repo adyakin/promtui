@@ -36,7 +36,7 @@ func TestResizeOverlayAndSwitchDuringGraphUpload(t *testing.T) {
 	if newFrame.err != nil || newFrame.key.cols != 98 || newFrame.key.rows != 20 {
 		t.Fatal(newFrame.key, newFrame.err)
 	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+	press(m, '?')
 	_, cmd := m.Update(newFrame)
 	if cmd != nil || m.chart.displayed.cols != 0 {
 		t.Fatal("stale graph covered help")

@@ -508,11 +508,15 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 		}
 	case len(m.table.Rows) == 0:
 		body[0] = "  No data"
+	case m.chart.enabled && m.chart.err != "":
+		if room == 1 {
+			body[0] = "  Graph error: " + ui.Plain(m.chart.err)
+		} else {
+			renderPaneError(body, paneErrorRows(inner-2, "Graph rendering failed", m.chart.err), 0)
+		}
 	case m.chart.enabled:
 		if room > 1 {
 			switch {
-			case m.chart.err != "":
-				body[0] = "  " + ui.Plain(m.chart.err)
 			case !m.hasVisibleSeries():
 				body[0] = "  No visible series. Use the series selector."
 			case m.activeTab == promQLTab && m.panel == 0 && !m.popup && !m.searching && m.graphPlace().cols == 0:

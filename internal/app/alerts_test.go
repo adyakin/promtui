@@ -236,11 +236,12 @@ func TestAlertsRefreshLifecycle(t *testing.T) {
 	}
 	_ = m.refreshAlerts()
 	m.onAlertsCompleted(alertsCompleted{m.alerts.requestID, nil, alertmanager.ErrAuth}, now.Add(alertRefreshInterval))
-	if len(m.alerts.visible) != 1 || !strings.Contains(m.screen(), "Stale · Authentication failed") {
-		t.Fatal("error discarded cached data or status")
+	if screen := ansi.Strip(m.screen()); len(m.alerts.visible) != 1 ||
+		!strings.Contains(screen, "│  Authentication failed") || strings.Contains(screen, "Changed") {
+		t.Fatalf("error did not replace cached data in the pane:\n%s", screen)
 	}
-	press(m, tea.KeyF2)
-	if !strings.Contains(m.screen(), "Alertmanager error") {
+	pressAlt(m, 's')
+	if !strings.Contains(m.screen(), "Alerts status") {
 		t.Fatal("no error details")
 	}
 	press(m, tea.KeyEsc)

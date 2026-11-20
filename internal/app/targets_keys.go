@@ -15,7 +15,15 @@ type targetLabelsCopied struct {
 func (m *Model) targetsKey(k tea.KeyPressMsg) tea.Cmd {
 	a := &m.targets
 	key := k.String()
-	if a.input.Focused() {
+	if k.Keystroke() == "alt+s" && a.dialog != targetSources {
+		if a.dialog == targetStatus {
+			a.dialog = noTargetDialog
+		} else {
+			a.dialog, a.dialogRow = targetStatus, 0
+		}
+		return nil
+	}
+	if a.input.Focused() && a.dialog == noTargetDialog {
 		switch key {
 		case "enter":
 			a.filter = a.input.Value()
@@ -36,15 +44,22 @@ func (m *Model) targetsKey(k tea.KeyPressMsg) tea.Cmd {
 		case "enter":
 			id := a.selection()
 			a.source, a.dialog = a.dialogRow, noTargetDialog
+			a.errorOffset = 0
 			a.rebuild(id, 0)
 		default:
 			a.dialogRow = targetNavigate(key, a.dialogRow, len(a.sources)+1, m.targetSourcePage())
 		}
 		return nil
-	case targetDetails, targetHelp:
+	case targetDetails, targetHelp, targetStatus:
 		switch key {
-		case "esc", "?", "f1":
+		case "esc":
 			a.dialog = noTargetDialog
+		case "?":
+			if a.dialog == targetHelp {
+				a.dialog = noTargetDialog
+			} else {
+				a.dialog, a.dialogRow = targetHelp, 0
+			}
 		case "y":
 			if a.dialog == targetDetails && len(a.detail.Labels) > 0 {
 				text, id := strings.Join(targetLabels(a.detail.Labels), "\n"), a.dialogID
@@ -53,6 +68,21 @@ func (m *Model) targetsKey(k tea.KeyPressMsg) tea.Cmd {
 		case "up", "down", "pgup", "pgdown", "home", "end":
 			_, rows, _, room := m.targetTextDialog()
 			a.dialogRow = targetNavigate(key, min(a.dialogRow, max(0, len(rows)-room)), len(rows)-room+1, room)
+		}
+		return nil
+	}
+	if a.hasError() {
+		switch key {
+		case "up", "down", "pgup", "pgdown", "home", "end":
+			a.errorOffset = scrollPaneError(key, a.errorOffset, len(m.targetErrorRows()), max(1, m.height-5))
+		case "f":
+			a.dialog, a.dialogRow = targetSources, a.source
+		case "r":
+			return m.refreshTargets()
+		case "?":
+			a.dialog, a.dialogRow = targetHelp, 0
+		case "q":
+			return m.act("quit", "", 0)
 		}
 		return nil
 	}
@@ -92,7 +122,7 @@ func (m *Model) targetsKey(k tea.KeyPressMsg) tea.Cmd {
 		a.rebuild(id, a.row)
 	case "r":
 		return m.refreshTargets()
-	case "?", "f1":
+	case "?":
 		a.dialog, a.dialogRow = targetHelp, 0
 	case "q":
 		return m.act("quit", "", 0)

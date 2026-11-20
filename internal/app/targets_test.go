@@ -67,11 +67,19 @@ func TestTargetsIndependentRefresh(t *testing.T) {
 		if p == 0 {
 			a.moveTo(1)
 		}
-		if p == 1 && (!strings.Contains(screen, "Incomplete · 1/2 OK") || !strings.Contains(screen, "1 DOWN") ||
-			!strings.Contains(screen, "DOWN*") || a.visible[a.row].source != "b") {
+		if p == 1 && (!strings.Contains(screen, "Incomplete · 1/2 OK") || !strings.Contains(screen, "│  b:") ||
+			strings.Contains(screen, "shared") || a.visible[a.row].source != "b") {
 			t.Fatal(screen)
 		}
-		if p == 2 && (!strings.Contains(screen, "All sources unavailable") || strings.Contains(screen, " DOWN ·")) {
+		if p == 1 {
+			press(m, 'f', tea.KeyDown, tea.KeyEnter)
+			if screen := ansi.Strip(m.screen()); !strings.Contains(screen, "shared") || strings.Contains(screen, "│  b:") {
+				t.Fatal(screen)
+			}
+			press(m, 'f', tea.KeyUp, tea.KeyEnter)
+		}
+		if p == 2 && (!strings.Contains(screen, "│  All sources unavailable") || !strings.Contains(screen, "│  a:") ||
+			!strings.Contains(screen, "│  b:") || strings.Contains(screen, "shared")) {
 			t.Fatal(screen)
 		}
 		if p == 3 && a.sources[1].rows[0].instance != "recovered" {

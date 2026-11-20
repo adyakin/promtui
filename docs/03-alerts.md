@@ -301,7 +301,7 @@ Requirements:
 - Do not overlap requests unnecessarily.
 - Cancel or ignore obsolete requests.
 - Preserve filters, sorting and selection.
-- Do not interrupt an open details overlay.
+- Keep an open details overlay on successful refreshes; close it on failure to show the error.
 - Avoid unnecessary visual flickering.
 
 When returning to Alerts after visiting another tab, refresh if cached data is stale.
@@ -310,9 +310,8 @@ When returning to Alerts after visiting another tab, refresh if cached data is s
 
 If refresh fails:
 
-- Preserve the last successful alert list.
-- Display a visible stale-data/error indicator.
-- Provide access to error details.
+- Preserve the last successful alert list in the cache.
+- Replace the visible list with the wrapped error in the Alerts pane. Let users scroll long errors.
 - Allow manual retry.
 
 A successful response containing zero alerts must display:

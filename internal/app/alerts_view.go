@@ -27,10 +27,10 @@ func (m *Model) alertsFooter() string {
 		hints, back = []string{"↑↓ Scroll"}, "Esc Close"
 	case a.dialog == alertDetails:
 		hints, back = []string{"↑↓ Scroll", "y Copy labels", "? Help"}, "Esc Close"
-	case a.dialog == alertError:
+	case a.dialog == alertStatusDialog:
 		hints, back = []string{"↑↓ Scroll", "? Help"}, "Esc Close"
 	case a.input.Focused():
-		hints, back = []string{"Enter Apply", "Alt+0–2 Tabs"}, "Esc Cancel"
+		hints, back = []string{"Enter Apply", "Alt+S Status", "Alt+0–2 Tabs"}, "Esc Cancel"
 		if len(m.opt.Connections) > 0 {
 			hints = append(hints, m.connectionHint())
 		}
@@ -39,16 +39,19 @@ func (m *Model) alertsFooter() string {
 			hints = append(hints, m.connectionHint())
 		}
 		if a.err != nil {
-			hints = append(hints, "F2 Error")
-		}
-		if len(a.visible) > 0 {
-			hints = append(hints, "↑↓ Select", "Enter Details")
-		}
-		if !a.lastOK.IsZero() {
-			hints = append(hints, "/ Filter")
-		}
-		if len(a.rows) > 0 {
-			hints = append(hints, "s Sort")
+			if len(m.alertErrorRows()) > m.height-5 {
+				hints = append(hints, "↑↓ Scroll")
+			}
+		} else {
+			if len(a.visible) > 0 {
+				hints = append(hints, "↑↓ Select", "Enter Details")
+			}
+			if !a.lastOK.IsZero() {
+				hints = append(hints, "/ Filter")
+			}
+			if len(a.rows) > 0 {
+				hints = append(hints, "s Sort")
+			}
 		}
 		if m.opt.Connection.AlertmanagerURL != "" && a.cancel == nil {
 			hints = append(hints, "r Refresh")
@@ -56,7 +59,7 @@ func (m *Model) alertsFooter() string {
 		if a.cancel != nil {
 			hints = append(hints, "Ctrl+C Cancel")
 		}
-		hints = append(hints, "? Help", "0–2 Tabs", "q Quit")
+		hints = append(hints, "? Help", "Alt+S Status", "0–2 Tabs", "q Quit")
 	}
 	return m.formatFooter(hints, back, "   ")
 }
@@ -77,9 +80,6 @@ func (a *alertsState) status() string {
 		if a.cancel != nil {
 			text += " · retrying"
 		}
-		if !a.lastOK.IsZero() {
-			text = "Stale · " + text
-		}
 		return text
 	}
 	if a.cancel != nil {
@@ -93,12 +93,19 @@ func (a *alertsState) status() string {
 
 func (m *Model) alertPage() int { return max(1, m.height-8) }
 
+func (m *Model) alertErrorRows() []string {
+	return paneErrorRows(m.width-4, m.alerts.status(), m.alerts.err.Error())
+}
+
 func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	a := &m.alerts
 	width := m.width - 2
 	body := make([]string, m.height-5)
 	var cursor *tea.Cursor
+	meta := ""
 	switch {
+	case a.err != nil:
+		meta = renderPaneError(body, m.alertErrorRows(), a.errorOffset)
 	case m.opt.Connection.AlertmanagerURL == "":
 		copy(body, strings.Split(ansi.Wrap("Set alertmanager_url in this connection’s TOML configuration to load alerts.", width-4, ""), "\n"))
 		for i, row := range body {
@@ -107,15 +114,7 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 			}
 		}
 	case a.lastOK.IsZero():
-		switch {
-		case a.err != nil:
-			body[0] = "  F2: error details"
-			if a.cancel == nil {
-				body[1] = "  r: retry"
-			}
-		default:
-			body[0] = "  Loading from Alertmanager…"
-		}
+		body[0] = "  Loading from Alertmanager…"
 	default:
 		c := a.counts
 		body[0] = fmt.Sprintf("  %d total · %d active · %d silenced · %d inhibited", c.total, c.active, c.silenced, c.inhibited)
@@ -168,8 +167,7 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	if a.copyStatus != "" && !a.help && a.dialog == alertDetails {
 		status = a.copyStatus + " · " + status
 	}
-	meta := ""
-	if len(a.visible) > 0 {
+	if a.err == nil && len(a.visible) > 0 {
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
 	}
 	base := strings.Join([]string{m.header(alertsTab), frame("Alerts", meta, body, m.width, true),
@@ -278,22 +276,26 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 		switch a.dialog {
 		case alertDetails:
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll details", "y: copy all labels", "Esc or ?: return to details"}
-		case alertError:
-			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll the error", "Esc or ?: return to the error"}
+		case alertStatusDialog:
+			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll status", "Esc or ?: return to status"}
 		default:
 			lines = []string{"↑ / ↓: select an alert", "PgUp / PgDn: move one page", "Home / End: first / last alert",
 				"Enter: open details", "/: filter label values (Enter applies, Esc cancels)",
 				"s: switch between state/severity and newest-first", "r: refresh now (auto-refresh every 30s)",
-				"F2: inspect the last refresh error", "0 / 1 / 2 or Alt+0 / 1 / 2: switch tabs", "q: quit"}
+				"Alt+S: show request status", "0 / 1 / 2 or Alt+0 / 1 / 2: switch tabs", "q: quit"}
+			if a.err != nil {
+				lines = append([]string{"↑ / ↓ and PgUp / PgDn: scroll the error"}, lines...)
+			}
 		}
 	case a.dialog == alertDetails:
 		name, lines = "Alert details", alertDetailLines(a.detail, now)
-	case a.dialog == alertError:
-		name = "Alertmanager error"
+	case a.dialog == alertStatusDialog:
+		name, lines = "Alerts status", []string{a.status()}
 		if a.err != nil {
-			lines = []string{a.err.Error()}
-		} else {
-			lines = []string{"The latest refresh succeeded."}
+			lines = append(lines, a.err.Error())
+		}
+		if !a.lastOK.IsZero() {
+			lines = append(lines, "Last successful refresh: "+alertTime(a.lastOK))
 		}
 	}
 	width = min(76, m.width-max(4, m.width/8))

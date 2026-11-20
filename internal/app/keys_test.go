@@ -58,7 +58,8 @@ func TestEditorAndResultsFocus(t *testing.T) {
 	if m.panel != helpKeys || m.editor.Focused() {
 		t.Fatal("panel navigation leaked through help")
 	}
-	press(m, tea.KeyEsc, tea.KeyEsc, tea.KeyF5)
+	press(m, tea.KeyEsc, tea.KeyEsc)
+	m.Update(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
 	if m.panel != 0 || m.editor.Focused() || m.cancel == nil {
 		t.Fatal("closing help or running changed Results focus")
 	}
@@ -70,7 +71,8 @@ func TestEditorAndResultsFocus(t *testing.T) {
 	if !m.editor.Focused() {
 		t.Fatal("i did not restore editing")
 	}
-	press(m, tea.KeyTab, tea.KeyF5)
+	press(m, tea.KeyTab)
+	m.Update(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
 	press(m, 'q')
 	if !m.quitting || m.cancel != nil {
 		t.Fatal("Results q should quit and cancel the run")
@@ -99,6 +101,60 @@ func TestRunDoesNotStealFocusAfterReturningToQuery(t *testing.T) {
 	}
 }
 
+func TestHelpAndStatusShortcutsWithoutFunctionKeys(t *testing.T) {
+	for _, tab := range []tabID{promQLTab, alertsTab, targetsTab} {
+		t.Run(tabs[tab], func(t *testing.T) {
+			m := New(Options{Graphics: true}, nil)
+			m.activeTab = tab
+			m.editor.SetValue("up")
+			before := m.screen()
+			press(m, tea.KeyF1, tea.KeyF2, tea.KeyF4, tea.KeyF5)
+			if m.screen() != before || m.cancel != nil || m.opt.Ranged {
+				t.Fatal("function key changed the app")
+			}
+			press(m, '?')
+			if screen := ansi.Strip(m.screen()); !strings.Contains(strings.ToLower(screen), "help") || m.screen() == before {
+				t.Fatal("help did not open:", screen)
+			}
+			pressAlt(m, 's')
+			if screen := strings.ToLower(ansi.Strip(m.screen())); !strings.Contains(screen, "status") || m.screen() == before {
+				t.Fatal("status did not open:", screen)
+			}
+			pressAlt(m, 's')
+			if m.screen() != before {
+				t.Fatal("status did not close")
+			}
+		})
+	}
+}
+
+func TestQuestionMarkIsLiteralInTextInputs(t *testing.T) {
+	m := New(Options{}, nil)
+	press(m, 'i', '?')
+	m.popup = true
+	press(m, '?')
+	if m.editor.Value() != "??" || m.panel != 0 {
+		t.Fatal("help intercepted Query input")
+	}
+	m.Update(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
+	press(m, '?')
+	if m.searchText != "?" || !m.searching {
+		t.Fatal("help intercepted history search")
+	}
+	m.activeTab = alertsTab
+	m.alerts.lastOK = time.Now()
+	press(m, '/', '?')
+	if m.alerts.input.Value() != "?" || m.alerts.help {
+		t.Fatal("help intercepted the Alerts filter")
+	}
+	m.activeTab = targetsTab
+	m.targets = newTargetsState(config.Connection{URL: "http://example.test"})
+	press(m, '/', '?')
+	if m.targets.input.Value() != "?" || m.targets.dialog != noTargetDialog {
+		t.Fatal("help intercepted the Targets filter")
+	}
+}
+
 func TestCtrlCQuitsWhenIdle(t *testing.T) {
 	for _, scope := range []keyScope{editKeys, tableKeys, helpKeys} {
 		m := New(Options{}, nil)
@@ -107,7 +163,7 @@ func TestCtrlCQuitsWhenIdle(t *testing.T) {
 			press(m, 'i')
 		}
 		if scope == helpKeys {
-			press(m, tea.KeyF1)
+			press(m, '?')
 		}
 		_, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 		if !m.quitting || cmd == nil || m.editor.Value() != "up" {

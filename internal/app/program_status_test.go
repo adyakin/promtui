@@ -45,7 +45,7 @@ func TestProgramStatusRapidQueries(t *testing.T) {
 
 func TestNoProgramStatusForBackgroundOperations(t *testing.T) {
 	m := New(Options{ProgramStatus: true}, nil)
-	for _, msg := range []tea.Msg{tea.WindowSizeMsg{Width: 80, Height: 24}, saved{}, alertsCompleted{}, targetsCompleted{}, tea.KeyPressMsg{Code: tea.KeyF5}} {
+	for _, msg := range []tea.Msg{tea.WindowSizeMsg{Width: 80, Height: 24}, saved{}, alertsCompleted{}, targetsCompleted{}, tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl}} {
 		m.Update(msg)
 		if s := m.programStatus; s.sending || s.pending != "" {
 			t.Fatalf("%T reported status", msg)
@@ -97,7 +97,7 @@ func TestProgramStatusWithBubbleTeaAndKitty(t *testing.T) {
 	}()
 	p.Send(tea.KeyPressMsg{Code: 'i', Text: "i"})
 	p.Send(tea.PasteMsg{Content: "up"})
-	p.Send(tea.KeyPressMsg{Code: tea.KeyF5})
+	p.Send(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
 	awaitPacket := func(match func(any) bool) any {
 		t.Helper()
 		var seen []string
@@ -122,7 +122,7 @@ func TestProgramStatusWithBubbleTeaAndKitty(t *testing.T) {
 	}).(graphPacket)
 	p.Send(tea.KeyPressMsg{Code: 'i', Text: "i"})
 	p.Send(tea.PasteMsg{Content: "x"})
-	p.Send(tea.KeyPressMsg{Code: tea.KeyF5})
+	p.Send(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
 	awaitPacket(func(packet any) bool {
 		return packet == statusPacket(programstatus.Report(programstatus.Error, "Query failed"))
 	})

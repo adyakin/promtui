@@ -21,7 +21,7 @@ by all Prometheus and VictoriaMetrics connections.
 
 Save, browse, and confirmation are floating overlays; they don't move or resize
 the editor, results, or graph. Loading changes only the editor and its focus. Run
-the loaded query explicitly with `Ctrl+Enter`, `F5`, or `Ctrl+G`. Rename, update,
+the loaded query explicitly with `Ctrl+Enter` or `Ctrl+G`. Rename, update,
 and delete leave the browser open. If a renamed query no longer matches the active
 filter, the filter clears so the renamed query remains selected.
 

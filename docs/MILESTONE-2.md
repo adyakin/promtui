@@ -6,12 +6,12 @@ Typing the opening quote in a metric-scoped matcher opens a bounded list of labe
 
 | Key | Action |
 |---|---|
-| Ctrl+Enter / Enter | Execute / insert a newline. Ctrl+G and F5 still execute on terminals that cannot distinguish modified Enter. |
+| Ctrl+Enter / Enter | Execute / insert a newline. Ctrl+G also executes on terminals that cannot distinguish modified Enter. |
 | Ctrl+Space / ↑↓ / Tab | Open suggestions / select / replace the token at the cursor. Typing a prefix also triggers suggestions after a pause. |
 | Ctrl+R | Search this connection’s history by fuzzy subsequence. Enter restores a query for editing; Esc preserves the draft. |
 | Alt+Up / Alt+Down | Recall older / newer history entries. |
 | Esc | Dismiss a popup first; otherwise switch editor/results focus. |
-| `?` / F1 | Show keys. `?` remains literal inside strings, comments and the history filter; F1 works there too. |
+| `?` | Show keys outside text inputs. `?` remains literal while typing. |
 | Ctrl+C | Cancel the running query, or quit when idle. |
 
 ## Implementation

@@ -29,7 +29,7 @@ cp config.example.yaml config.yaml
 ./bin/promtui -config config.yaml
 ```
 
-Press **i** to edit a query and **Ctrl+Enter** to run it. Use **g** for Graph, **t** for Table, **0–2** to switch tabs, **c** to change connections, and **?** for help. Graphs require a terminal with Kitty graphics support, such as Kitty or Rex.
+Press **i** to edit a query and **Ctrl+Enter** or **Ctrl+G** to run it. Use **g** for Graph, **t** for Table, **0–2** to switch tabs, and **c** to change connections. Press **?** for help outside text inputs and **Alt+S** (Option+S on macOS with Option configured as Alt) for request status. PromTUI does not bind function keys. Graphs require a terminal with Kitty graphics support, such as Kitty or Rex.
 
 ## Example configuration
 

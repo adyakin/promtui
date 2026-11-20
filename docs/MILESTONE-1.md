@@ -18,7 +18,7 @@ Try `vector(42)` against a running backend even if it hasn't scraped any targets
 
 | Keys | Action |
 |---|---|
-| Enter / Ctrl+G or F5 | Insert newline / execute. No reliance on Ctrl+Enter encoding. |
+| Enter / Ctrl+G | Insert newline / execute. No reliance on Ctrl+Enter encoding. |
 | Ctrl+T / Ctrl+W | Toggle instant/range / select next relative range (15m, 1h, 6h, 24h, 7d). Execute to apply. |
 | Alt+Up/Down or Ctrl+P/N | Recall older/newer queries for this connection in the editor. Moving past the newest restores the draft. |
 | Tab or Esc | Switch editor/table focus. |
@@ -26,7 +26,7 @@ Try `vector(42)` against a running backend even if it hasn't scraped any targets
 | `[` / `]` | Inspect the previous/next sample of the selected series. Each row starts at its newest sample. |
 | `l` / `n` / `v` | Toggle labels / sort by name ascending / sort by latest numeric value descending. |
 | `y` / `Y` | Copy selected value / labels to the host clipboard. |
-| F1 / F2 | Show keys / read full request status, result identity and warnings. Scroll with arrows; Esc closes. |
+| ? / Alt+S | Show keys outside text inputs / read request status, result identity and warnings. Scroll with arrows; Esc closes. |
 | Ctrl+C / Ctrl+Q | Cancel a running request (quit if idle) / quit, flushing pending history. |
 
 ## Code map and decisions

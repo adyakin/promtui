@@ -78,7 +78,7 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		if m.activeTab == alertsTab && m.alerts.cancel != nil {
 			m.alerts.stop()
-			m.alerts.err = errAlertsCancelled
+			m.alerts.setError(errAlertsCancelled)
 			m.alerts.lastDone = time.Now()
 			return m.scheduleAlertsTick(m.alerts.lastDone), true
 		}

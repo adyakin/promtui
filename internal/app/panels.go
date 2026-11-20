@@ -163,7 +163,7 @@ func (m *Model) helpBody() []string {
 			description = "Previous or next query"
 		case "newline":
 			description = "Insert newline"
-		case "legacyView", "mode":
+		case "mode":
 			description = "Switch between instant and range and rerun"
 		case "graph":
 			description = "Run a range query and show Graph"
@@ -194,7 +194,7 @@ func (m *Model) panelBody() []string {
 	case helpKeys:
 		lines = m.helpBody()
 	case detailKeys:
-		for _, s := range []string{m.status, "Last result: " + m.summary, m.notice, m.diagnostic, m.historyError} {
+		for _, s := range []string{m.status, "Last result: " + m.summary, m.notice, m.diagnostic, m.historyError, m.chart.err} {
 			if s != "" {
 				lines = append(lines, ui.Plain(s))
 			}

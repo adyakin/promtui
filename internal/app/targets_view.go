@@ -32,7 +32,7 @@ func (m *Model) targetsFooter() string {
 	switch a.dialog {
 	case targetSources:
 		return format([]string{targetSelectHint, "Enter Apply"}, "Esc Cancel")
-	case targetDetails, targetHelp:
+	case targetDetails, targetHelp, targetStatus:
 		hints := []string{"↑↓ Scroll"}
 		if a.dialog == targetDetails && len(a.detail.Labels) != 0 {
 			hints = append(hints, "y Copy labels")
@@ -40,18 +40,20 @@ func (m *Model) targetsFooter() string {
 		return format(hints, "Esc Close")
 	}
 	if a.input.Focused() {
-		return format([]string{"Enter Apply", "Alt+0–2 Tabs"}, "Esc Cancel")
+		return format([]string{"Enter Apply", "Alt+S Status", "Alt+0–2 Tabs"}, "Esc Cancel")
 	}
 	var hints []string
-	hasFailures := slices.ContainsFunc(a.sources, func(src targetSourceState) bool { return src.err != nil })
-	if hasFailures {
+	hasError := a.hasError()
+	if hasError {
+		if len(m.targetErrorRows()) > m.height-5 {
+			hints = append(hints, "↑↓ Scroll")
+		}
 		hints = append(hints, targetSourcesHint)
-	}
-	if len(a.visible) != 0 {
+	} else if len(a.visible) != 0 {
 		hints = append(hints, targetDetailsHint, targetSelectHint)
 	}
 	if len(a.sources) != 0 {
-		if !hasFailures {
+		if !hasError {
 			hints = append(hints, targetSourcesHint)
 		}
 		if a.cancel != nil {
@@ -59,14 +61,16 @@ func (m *Model) targetsFooter() string {
 		} else {
 			hints = append(hints, targetRefreshHint)
 		}
-		hints = append(hints, targetFilterHint, targetHealthHint, targetSortHint)
-		dropped := targetDroppedHint
-		if targetHealthOrder[a.health] == targetDropped {
-			dropped = "d Active"
+		if !hasError {
+			hints = append(hints, targetFilterHint, targetHealthHint, targetSortHint)
+			dropped := targetDroppedHint
+			if targetHealthOrder[a.health] == targetDropped {
+				dropped = "d Active"
+			}
+			hints = append(hints, dropped)
 		}
-		hints = append(hints, dropped)
 	}
-	hints = append(hints, "0–2 Tabs")
+	hints = append(hints, "0–2 Tabs", "Alt+S Status")
 	if len(m.opt.Connections) > 0 {
 		hints = append(hints, m.connectionHint())
 	}
@@ -94,6 +98,21 @@ func targetSourceError(s targetSourceState) string {
 
 func (m *Model) targetPage() int { return max(1, m.height-8) }
 
+func (m *Model) targetErrorRows() []string {
+	a := &m.targets
+	var details []string
+	for i, src := range a.sources {
+		if a.matchesSource(i) && src.err != nil {
+			details = append(details, src.Name+": "+targetSourceError(src))
+		}
+	}
+	heading := "Targets refresh failed"
+	if a.source == 0 && len(details) == len(a.sources) {
+		heading = "All sources unavailable"
+	}
+	return paneErrorRows(m.width-4, heading, details...)
+}
+
 func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 	a := &m.targets
 	body := make([]string, m.height-5)
@@ -101,16 +120,12 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 	var cursor *tea.Cursor
 	var counts [targetAllActive]int
 	ready, failed, loading := 0, 0, 0
-	firstError := ""
 	for _, src := range a.sources {
 		if src.loading {
 			loading++
 		}
 		if src.err != nil {
 			failed++
-			if firstError == "" {
-				firstError = ui.Plain(src.Name + ": " + targetSourceError(src))
-			}
 		} else if !src.lastOK.IsZero() {
 			ready++
 			for i, n := range src.counts {
@@ -119,6 +134,7 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 		}
 	}
 	status := ""
+	hasError := a.hasError()
 	switch {
 	case len(a.sources) == 0:
 		for i, line := range wrapTargetLines([]string{"Missing target configuration", "Set the connection URL or YAML targets sources."}, width-4) {
@@ -145,7 +161,7 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 		if a.filter != "" {
 			body[1] = "  " + targetHealthNames[targetHealthOrder[a.health]] + " · /" + ui.Plain(a.filter) + " · " + ui.Plain(sourceLabel) + " · Sort: " + targetSortNames[a.sort]
 		}
-		if a.input.Focused() {
+		if a.input.Focused() && !hasError {
 			body[1] = a.input.View()
 			if c := a.input.Cursor(); c != nil && !m.quitting {
 				cursor = nativeCursor(min(m.width-2, 1+c.X), 3)
@@ -154,11 +170,11 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 		status = fmt.Sprintf("%d/%d OK", ready, len(a.sources))
 		switch {
 		case failed == len(a.sources) && loading == 0:
-			status = "All sources unavailable · " + firstError
+			status = "All sources unavailable"
 		case ready < len(a.sources):
 			status = "Incomplete · " + status
 			if failed > 0 {
-				status += fmt.Sprintf(" · %d failed · %s", failed, firstError)
+				status += fmt.Sprintf(" · %d failed", failed)
 			}
 		default:
 			status = "Sources: " + status
@@ -169,6 +185,9 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 	}
 	meta := ""
 	switch {
+	case hasError:
+		clear(body)
+		meta = renderPaneError(body, m.targetErrorRows(), a.errorOffset)
 	case len(a.visible) > 0:
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
 		body[2] = title.Render(targetColumns(width, "  ", [6]string{"Health", "Instance", "Job", "Source", "Last scrape", "Duration"}))
@@ -177,9 +196,6 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 		for i := first; i < min(first+room, len(a.visible)); i++ {
 			row := a.visible[i]
 			health := targetHealthNames[row.health]
-			if a.sources[row.sourceIndex].err != nil {
-				health += "*"
-			}
 			prefix := "  "
 			if i == a.row {
 				prefix = "› "
@@ -212,9 +228,6 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 				body[2] = "  Loading targets…"
 			case !success:
 				body[2] = "  No target data · f Sources"
-				if len(a.sources) == 1 && a.sources[0].fallback && errors.Is(a.sources[0].err, api.ErrTargetsUnsupported) {
-					copy(body[3:], wrapTargetLines([]string{"  Configure explicit YAML targets sources."}, width))
-				}
 			case total == 0 && health == targetDropped:
 				body[2] = "  No dropped targets"
 			case total == 0:
@@ -324,13 +337,20 @@ func (m *Model) targetTextDialog() (name string, rows []string, width, room int)
 	name = "Targets help"
 	lines := []string{targetSelectHint + " target · PgUp/PgDn Page · Home/End First/last",
 		targetDetailsHint + " · " + targetFilterHint + " (Enter apply, Esc cancel)", targetSourcesHint + " · " + targetHealthHint + " · " + targetSortHint,
-		targetDroppedHint + "/active · " + targetRefreshHint + " (auto every 30s)", "* marks stale targets; stale data is excluded from totals.",
+		targetDroppedHint + "/active · " + targetRefreshHint + " (auto every 30s)", "Alt+S: show request status",
 		"0–2 Tabs (Alt+0–2 while typing) · c Connections · q Quit"}
 	if a.dialog == targetDetails {
 		name, lines = "Target details", targetDetailLines(a.detail)
-		src := a.sources[a.detail.sourceIndex]
-		if src.err != nil {
-			lines = append([]string{"Source stale: " + targetSourceError(src), ""}, lines...)
+	} else if a.dialog == targetStatus {
+		name, lines = "Targets status", []string{}
+		for _, src := range a.sources {
+			lines = append(lines, src.Name+" · "+src.status())
+			if src.err != nil {
+				lines = append(lines, targetSourceError(src))
+			}
+		}
+		if len(lines) == 0 {
+			lines = []string{"No targets configured"}
 		}
 	}
 	rows = wrapTargetLines(lines, max(1, width-4))

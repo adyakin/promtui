@@ -37,11 +37,10 @@ default. See the [configuration reference](configuration.md).
   needed, every 30 seconds while visible, or on demand. Tab or connection
   switches cancel running requests and ignore obsolete results.
 - An **OK source** answered successfully; it may still have **DOWN targets**.
-  On failure, a source with cached data becomes **Stale**. Its rows remain
-  visible and are marked `*`, but do not count toward current totals. Failed
-  sources make totals incomplete, and totals are unavailable if no source
-  succeeded. Press `f` and highlight any source to inspect its status and
-  error. A successful retry replaces the stale data.
+  On failure, a source with cached data becomes **Stale**. Its rows stay
+  cached but are not shown. The Targets pane shows errors for the current
+  source selection; press `f` to switch to a healthy source. A successful
+  retry replaces the cached data.
 - Filtering and sorting run on cached data. Selection, filters, and sort
   survive refreshes and tab switches. A connection switch starts a new view.
 
@@ -58,7 +57,8 @@ default. See the [configuration reference](configuration.md).
 | `d` | Toggle between dropped and the previous active view |
 | `s` | Cycle health, source, job, instance, and longest scrape duration |
 | `r`, `Ctrl+C` | Refresh now, or cancel a refresh in progress |
-| `Esc`, `?` / `F1` | Close the overlay, or open help |
+| `Esc`, `?` | Close the overlay, or open help outside text inputs |
+| `Alt+S` | Show source request status |
 
 ## Verification and limitations
 

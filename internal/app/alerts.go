@@ -22,7 +22,7 @@ type alertDialog uint8
 const (
 	alertNoDialog alertDialog = iota
 	alertDetails
-	alertError
+	alertStatusDialog
 )
 
 type alertsCompleted struct {
@@ -49,12 +49,13 @@ type alertsState struct {
 	help               bool
 	copyStatus         string
 
-	requestID  uint64
-	cancel     context.CancelFunc
-	tickQueued bool
-	lastOK     time.Time
-	lastDone   time.Time
-	err        error
+	requestID   uint64
+	cancel      context.CancelFunc
+	tickQueued  bool
+	lastOK      time.Time
+	lastDone    time.Time
+	err         error
+	errorOffset int
 }
 
 func newAlertsState() alertsState {
@@ -165,7 +166,8 @@ func (m *Model) onAlertsCompleted(v alertsCompleted, now time.Time) tea.Cmd {
 		return nil
 	}
 	a.cancel = nil
-	a.lastDone, a.err = now, v.err
+	a.lastDone = now
+	a.setError(v.err)
 	if v.err == nil {
 		id, row := a.selection(), a.row
 		a.lastOK = now
@@ -189,10 +191,33 @@ func (a *alertsState) edit(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
+func (a *alertsState) setError(err error) {
+	a.err, a.errorOffset = err, 0
+	if err == nil {
+		return
+	}
+	if a.dialog == alertDetails {
+		a.dialog = alertNoDialog
+	}
+	if a.input.Focused() {
+		a.input.Blur()
+		a.rebuild(a.filterAnchor, a.filterRow)
+	}
+}
+
 func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 	a := &m.alerts
 	key := k.String()
-	if a.input.Focused() {
+	if k.Keystroke() == "alt+s" {
+		a.help = false
+		if a.dialog == alertStatusDialog {
+			a.dialog = alertNoDialog
+		} else {
+			a.dialog, a.offset = alertStatusDialog, 0
+		}
+		return nil
+	}
+	if a.input.Focused() && !a.help && a.dialog == alertNoDialog {
 		switch key {
 		case "enter":
 			a.filter = a.input.Value()
@@ -213,7 +238,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 			} else {
 				a.dialog = alertNoDialog
 			}
-		case "?", "f1":
+		case "?":
 			a.help, a.helpOffset = !a.help, 0
 		case "up", "down", "pgup", "pgdown":
 			m.scrollAlertDialog(key)
@@ -222,6 +247,19 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 				text := alertLabelText(a.detail.Labels)
 				return func() tea.Msg { return alertLabelsCopied{clipboard.WriteAll(text)} }
 			}
+		}
+		return nil
+	}
+	if a.err != nil {
+		switch key {
+		case "up", "down", "pgup", "pgdown", "home", "end":
+			a.errorOffset = scrollPaneError(key, a.errorOffset, len(m.alertErrorRows()), max(1, m.height-5))
+		case "r":
+			return m.refreshAlerts()
+		case "?":
+			a.help, a.helpOffset = true, 0
+		case "q":
+			return m.act("quit", "", 0)
 		}
 		return nil
 	}
@@ -256,11 +294,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 	case "r":
 		return m.refreshAlerts()
-	case "f2":
-		if a.err != nil {
-			a.dialog, a.offset = alertError, 0
-		}
-	case "?", "f1":
+	case "?":
 		a.help, a.helpOffset = true, 0
 	case "q":
 		return m.act("quit", "", 0)

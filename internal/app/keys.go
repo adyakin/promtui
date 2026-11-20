@@ -46,7 +46,7 @@ const runHint = "Ctrl+Enter Run"
 
 // Order is footer priority. Actions without a hint are listed only in Help.
 var bindings = []binding{
-	{"run", "f5 ctrl+enter ctrl+g", "Ctrl+Enter / F5 / Ctrl+G", runHint, editKeys | completionKeys},
+	{"run", "ctrl+enter ctrl+g", "Ctrl+Enter / Ctrl+G", runHint, editKeys | completionKeys},
 	{"results", "tab shift+tab", "Tab / Shift+Tab", "Tab Results", editKeys},
 	{"saveQuery", "ctrl+s", "Ctrl+S", "Ctrl+S Save", editKeys | completionKeys},
 	{"browseQueries", "ctrl+o", "Ctrl+O", "Ctrl+O Saved", editKeys | completionKeys},
@@ -66,7 +66,7 @@ var bindings = []binding{
 	{"sort", "n v", "n / v", "n/v Sort", tableKeys},
 	{"labels", "l", "l", "l Labels", resultKeys},
 	{"copy", "y", "y", "y Copy", resultKeys},
-	{"run", "f5 ctrl+enter ctrl+g", "Ctrl+Enter / F5 / Ctrl+G", runHint, resultKeys},
+	{"run", "ctrl+enter ctrl+g", "Ctrl+Enter / Ctrl+G", runHint, resultKeys},
 	{"accept", "tab", "Tab", "Tab Accept", completionKeys},
 	{"restore", "enter", "Enter", "Enter Restore", historyKeys},
 	{"apply", "enter", "Enter", "Enter Run", rangeKeys},
@@ -88,9 +88,8 @@ var bindings = []binding{
 	{"savedApply", "enter", "Enter", "Enter Confirm", savedNameKeys | savedConfirmKeys},
 	{"cancelOrQuit", "ctrl+c", "Ctrl+C", "Ctrl+C Quit", allKeys},
 	{"back", "esc", "Esc", "Esc Back", allKeys &^ resultKeys},
-	{"help", "f1", "F1", "F1 Help", editKeys | completionKeys},
-	{"help", "f1 ?", "F1 / ?", "? Help", resultKeys},
-	{"status", "f2", "F2", "F2 Status", mainKeys},
+	{"help", "?", "?", "? Help", resultKeys | helpKeys | detailKeys},
+	{"status", "alt+s", "Alt+S", "Alt+S Status", mainKeys | completionKeys | detailKeys | helpKeys},
 	{"page", "pgup pgdown", "PgUp / PgDn", "", tableKeys},
 	{"edge", "home end", "Home / End", "", tableKeys},
 	{"pan", "left right", "← / →", "", tableKeys},
@@ -98,7 +97,6 @@ var bindings = []binding{
 	{"copyLabels", "Y shift+y", "Y", "", resultKeys},
 	{"recall", "alt+up alt+down", "Alt+Up / Alt+Down", "", editKeys | completionKeys},
 	{"newline", "enter", "Enter", "", editKeys | completionKeys},
-	{"legacyView", "f4", "F4", "", mainKeys},
 	{"mode", "ctrl+t", "Ctrl+T", "", mainKeys},
 	{"range", "ctrl+w", "Ctrl+W", "", resultKeys},
 	{"quit", "ctrl+q", "Ctrl+Q", "", allKeys},
@@ -134,7 +132,7 @@ func (m *Model) available(b binding, scope keyScope) bool {
 	switch b.id {
 	case "queryError", "copyQueryError":
 		return m.queryPhase == queryFailed
-	case "graph", "legacyView":
+	case "graph":
 		return m.opt.Graphics
 	case "series":
 		return m.opt.Graphics && !m.chart.result.Start.IsZero() && len(m.chart.visible) > 0
@@ -197,7 +195,7 @@ func (m *Model) promQLFooter() string {
 	}
 	for _, b := range bindings {
 		if b.scope&scope == 0 || b.hint == "" || !m.available(b, scope) ||
-			scope == completionKeys && (b.id == "run" || b.id == "history" || b.id == "complete" || b.id == "help" ||
+			scope == completionKeys && (b.id == "run" || b.id == "history" || b.id == "complete" ||
 				b.id == "saveQuery" || b.id == "browseQueries") {
 			continue
 		}
@@ -285,6 +283,9 @@ func (m *Model) formatFooter(hints []string, reserved, gap string) string {
 
 func (m *Model) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 	scope, key := m.scope(), k.String()
+	if k.Keystroke() == "alt+s" {
+		key = "alt+s"
+	}
 	for _, b := range bindings {
 		if b.scope&scope == 0 || key == "" || strings.ContainsRune(key, ' ') || !strings.Contains(" "+b.keys+" ", " "+key+" ") {
 			continue
@@ -369,9 +370,17 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 			m.panel = 0
 		}
 	case "help":
-		m.openPanel(helpKeys)
+		if scope == helpKeys {
+			m.panel = 0
+		} else {
+			m.openPanel(helpKeys)
+		}
 	case "status":
-		m.openPanel(detailKeys)
+		if scope == detailKeys {
+			m.panel = 0
+		} else {
+			m.openPanel(detailKeys)
+		}
 	case "queryError":
 		m.openPanel(queryErrorKeys)
 	case "copyQueryError":
@@ -381,7 +390,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		return m.runMode(true)
 	case "table":
 		return m.runMode(false)
-	case "mode", "legacyView":
+	case "mode":
 		return m.runMode(!m.opt.Ranged)
 	case "range":
 		m.openRange()

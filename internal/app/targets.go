@@ -59,6 +59,7 @@ const (
 	targetSources
 	targetDetails
 	targetHelp
+	targetStatus
 )
 
 type targetsState struct {
@@ -73,6 +74,7 @@ type targetsState struct {
 	input           textinput.Model
 	dialog          targetDialog
 	dialogRow       int
+	errorOffset     int
 	dialogID        int
 	detail          targetRow
 	copyStatus      string
@@ -108,6 +110,24 @@ func (a *targetsState) currentFilter() string {
 }
 
 func (a *targetsState) matchesSource(i int) bool { return a.source == 0 || a.source == i+1 }
+
+func (a *targetsState) hasError() bool {
+	if a.source != 0 {
+		return a.sources[a.source-1].err != nil
+	}
+	return slices.ContainsFunc(a.sources, func(src targetSourceState) bool { return src.err != nil })
+}
+
+func (a *targetsState) updateErrorView() {
+	a.errorOffset = 0
+	if a.dialog == targetDetails && a.sources[a.detail.sourceIndex].err != nil {
+		a.dialog = noTargetDialog
+	}
+	if a.hasError() && a.input.Focused() {
+		a.input.Blur()
+		a.rebuild(a.anchor, a.anchorRow)
+	}
+}
 
 func (a *targetsState) selection() string {
 	if len(a.visible) != 0 {
@@ -161,6 +181,9 @@ func (a *targetsState) stop(err error) {
 			}
 		}
 	}
+	if err != nil {
+		a.updateErrorView()
+	}
 	a.lastDone = time.Time{}
 }
 
@@ -210,7 +233,11 @@ func (m *Model) onTargetsCompleted(v targetsCompleted, now time.Time) tea.Cmd {
 		return nil
 	}
 	src := &a.sources[v.source]
+	hadError := src.err != nil
 	src.loading, src.err = false, v.err
+	if (hadError || v.err != nil) && a.matchesSource(v.source) {
+		a.updateErrorView()
+	}
 	if v.err == nil {
 		id, row := a.selection(), a.row
 		src.lastOK, src.rows = now, makeTargetRows(src.Name, v.data)

@@ -20,7 +20,7 @@ PromTUI appends `/api/v2/alerts` to the base URL, preserving reverse-proxy prefi
 - Compact counts and a keyboard-scrollable table; a single alert can count as both silenced and inhibited. Narrow terminals show state and name, with all fields accessible in details.
 - Interactive, case-insensitive substring filtering across label values. Sort by state/severity/oldest first, or switch to newest first. Selection survives sorting and refresh by source-scoped fingerprint or canonical labels; missing selections fall back to the nearest row.
 - Floating details with wrapped annotations, sorted labels, receivers, suppression references, timestamps, and generator URL. **y** copies the complete labels. Contextual help and the footer match the active view.
-- Manual refresh and a 30-second automatic refresh while visible. Leaving cancels an in-flight request; returning refreshes stale data. Failures retain the last good list and show a stale indicator with error details under **F2**. A successful empty response shows `No active alerts`.
+- Manual refresh and a 30-second automatic refresh while visible. Leaving cancels an in-flight request; returning refreshes stale data. A failure replaces the list with the error in the Alerts pane; use the arrow keys to scroll long errors. **Alt+S** opens request status. A successful empty response shows `No active alerts`.
 
 ## Source files
 
