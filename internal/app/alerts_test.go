@@ -44,7 +44,7 @@ func TestAlertRows(t *testing.T) {
 	rows[2].Status.InhibitedBy = []string{"parent"}
 	rows[3].Status.SilencedBy, rows[3].Status.InhibitedBy = []string{"silence"}, []string{"parent"}
 	rows[4].Status.SilencedBy = []string{"silence"}
-	a := newAlertsState()
+	a := newAlertsState(config.TableView{})
 	for _, row := range rows {
 		a.rows = append(a.rows, newAlertRow("source", row))
 	}
@@ -66,7 +66,7 @@ func TestAlertRows(t *testing.T) {
 	}
 	a.rebuild("", 0, now)
 	checkOrder("early", "late", "misc", "both", "sil", "inhib", "queue", "unknown")
-	a.newestFirst = true
+	a.sort = sortAlertNewest
 	a.rebuild(a.selection(), a.row, now)
 	checkOrder("both", "inhib", "late", "sil", "early", "misc", "queue", "unknown")
 	if a.row != 4 {
@@ -90,7 +90,7 @@ func TestAlertFilterSearchesOnlyTableColumns(t *testing.T) {
 	warning := testAlert("warning", "CertCheck", "warning", "active", now.Add(-6*time.Hour))
 	warning.Labels["instance"] = "node-east"
 
-	a := newAlertsState()
+	a := newAlertsState(config.TableView{})
 	for _, alert := range []alertmanager.Alert{critical, warning} {
 		a.rows = append(a.rows, newAlertRow("https://cluster-west-router", alert))
 	}

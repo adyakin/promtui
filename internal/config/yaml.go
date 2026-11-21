@@ -48,6 +48,8 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 			AlertmanagerURL    string    `yaml:"alertmanager_url"`
 			InsecureSkipVerify yaml.Node `yaml:"insecure_skip_verify"`
 			Targets            yaml.Node `yaml:"targets"`
+			Alerts             yaml.Node `yaml:"alerts"`
+			TargetsView        yaml.Node `yaml:"targets_view"`
 		}
 		for j := 0; j < len(value.Content); j += 2 {
 			field := value.Content[j]
@@ -56,7 +58,7 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 				if value.Content[j+1].ShortTag() != "!!str" {
 					return fmt.Errorf("connection %q: line %d: %s must be a string", key.Value, field.Line, field.Value)
 				}
-			case "insecure_skip_verify", "targets":
+			case "insecure_skip_verify", "targets", "alerts", "targets_view":
 			default:
 				return fmt.Errorf("connection %q: line %d: unknown field %q", key.Value, field.Line, field.Value)
 			}
@@ -72,8 +74,17 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("connection %q: %w", key.Value, err)
 		}
+		alerts, err := yamlTableView(fields.Alerts, AlertsView, "alerts")
+		if err != nil {
+			return fmt.Errorf("connection %q: %w", key.Value, err)
+		}
+		targetsView, err := yamlTableView(fields.TargetsView, TargetsView, "targets_view")
+		if err != nil {
+			return fmt.Errorf("connection %q: %w", key.Value, err)
+		}
 		*c = append(*c, rawConnection{
 			Name: key.Value, URL: fields.URL, AlertmanagerURL: fields.AlertmanagerURL, InsecureSkipVerify: override, Targets: targets,
+			Alerts: alerts, TargetsView: targetsView,
 		})
 	}
 	return nil

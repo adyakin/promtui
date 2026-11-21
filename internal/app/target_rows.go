@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"promtui/internal/api"
+	"promtui/internal/config"
 )
 
 type targetHealth int
@@ -25,17 +26,20 @@ const (
 var targetHealthNames = [...]string{"DOWN", "UNKNOWN", "UP", "DROPPED", "Active"}
 var targetHealthOrder = [...]targetHealth{targetAllActive, targetDown, targetUp, targetUnknown, targetDropped}
 
-type targetSort int
-
 const (
-	sortTargetHealth targetSort = iota
-	sortTargetSource
-	sortTargetJob
-	sortTargetInstance
-	sortTargetDuration
+	sortTargetHealth   = "health"
+	sortTargetSource   = "source"
+	sortTargetJob      = "job"
+	sortTargetInstance = "instance"
+	sortTargetDuration = "duration"
 )
 
-var targetSortNames = [...]string{"Health", "Source", "Job", "Instance", "Duration"}
+var defaultTargetSorts = []viewSort{
+	{sortTargetHealth, "Health"}, {sortTargetSource, "Source"}, {sortTargetJob, "Job"},
+	{sortTargetInstance, "Instance"}, {sortTargetDuration, "Duration"},
+}
+
+var defaultTargetFields = [...]string{"health", "instance", "job", "source", "last_scrape", "duration"}
 
 type targetRow struct {
 	api.Target
@@ -112,7 +116,49 @@ func (r *targetRow) matches(f fuzzyFilter) bool {
 	return f.matches(r.search...) || matchLabels(f, r.Labels) || matchLabels(f, r.DiscoveredLabels)
 }
 
-func compareTargetRows(a, b *targetRow, order targetSort) int {
+func (r *targetRow) field(field string) string {
+	if label, ok := config.LabelName(field); ok {
+		return r.Labels[label]
+	}
+	switch field {
+	case "health":
+		return targetHealthNames[r.health]
+	case "source":
+		return r.source
+	case "job":
+		return r.job
+	case "instance":
+		return r.instance
+	case "last_scrape":
+		return r.LastScrape
+	case "duration":
+		if r.LastScrapeDuration != nil {
+			return targetDuration(r.LastScrapeDuration)
+		}
+	case "scrape_url":
+		return r.ScrapeURL
+	case "scrape_pool":
+		return r.ScrapePool
+	case "global_url":
+		return r.GlobalURL
+	case "last_error":
+		return r.LastError
+	case "scrape_interval":
+		return r.ScrapeInterval
+	case "scrape_timeout":
+		return r.ScrapeTimeout
+	}
+	return ""
+}
+
+func (r *targetRow) displayField(field string, now time.Time) string {
+	if field == "last_scrape" {
+		return targetScrapeAge(r.lastScrape, now)
+	}
+	return r.field(field)
+}
+
+func compareTargetRows(a, b *targetRow, order string) int {
 	var primary int
 	switch order {
 	case sortTargetSource:
@@ -131,6 +177,22 @@ func compareTargetRows(a, b *targetRow, order targetSort) int {
 		case y != nil:
 			primary = 1
 		}
+	case "last_scrape":
+		primary = cmp.Or(missingLast(a.lastScrape.IsZero(), b.lastScrape.IsZero()), b.lastScrape.Compare(a.lastScrape))
+	case "scrape_interval", "scrape_timeout":
+		x, y := a.field(order), b.field(order)
+		dx, ex := time.ParseDuration(x)
+		dy, ey := time.ParseDuration(y)
+		if ex == nil && ey == nil {
+			primary = cmp.Compare(dx, dy)
+		} else {
+			// Group parseable values to keep the comparison transitive.
+			primary = cmp.Or(missingLast(ex != nil, ey != nil), compareFieldText(x, y))
+		}
+	case sortTargetHealth:
+		// Health is the first tiebreaker for every sort mode.
+	default:
+		primary = compareFieldText(a.field(order), b.field(order))
 	}
 	return cmp.Or(primary, cmp.Compare(a.health, b.health), cmp.Compare(a.source, b.source),
 		cmp.Compare(a.job, b.job), cmp.Compare(a.instance, b.instance), cmp.Compare(a.id, b.id))

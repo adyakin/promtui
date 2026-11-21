@@ -10,11 +10,19 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
 	"promtui/internal/alertmanager"
+	"promtui/internal/config"
 )
 
 const alertRefreshInterval = 30 * time.Second
 
 var errAlertsCancelled = errors.New("Alertmanager refresh cancelled")
+
+const (
+	sortAlertDefault = "state/severity"
+	sortAlertNewest  = "newest"
+)
+
+var defaultAlertSorts = []viewSort{{sortAlertDefault, sortAlertDefault}, {sortAlertNewest, sortAlertNewest}}
 
 type alertDialog uint8
 
@@ -36,7 +44,9 @@ type alertsState struct {
 	rows, visible []alertRow
 	counts        alertCounts
 	row           int
-	newestFirst   bool
+	view          config.TableView
+	sort          string
+	sorts         []viewSort
 	filter        string
 	input         textinput.Model
 	filterAnchor  string
@@ -57,13 +67,16 @@ type alertsState struct {
 	errorOffset int
 }
 
-func newAlertsState() alertsState {
+func newAlertsState(view config.TableView) alertsState {
 	input := textinput.New()
 	input.Prompt = "  Filter: "
 	input.Placeholder = "state, severity, alert, instance, duration"
+	if view.Search != nil {
+		input.Placeholder = "configured fields"
+	}
 	input.CharLimit = 4096
 	input.SetVirtualCursor(false)
-	return alertsState{input: input}
+	return alertsState{input: input, view: view, sort: sortAlertDefault, sorts: viewSorts(config.AlertsView, defaultAlertSorts, view.Columns)}
 }
 
 func (a *alertsState) currentFilter() string {
@@ -84,15 +97,19 @@ func (a *alertsState) rebuild(id string, row int, now time.Time) {
 	filter := newFuzzyFilter(a.currentFilter())
 	a.visible = a.visible[:0]
 	for _, item := range a.rows {
-		if len(filter) > 0 {
-			f := item.tableFields(now)
-			if !filter.matches(f.state, f.severity, f.name, f.instance, f.duration) {
-				continue
-			}
+		if !a.matches(item, filter, now) {
+			continue
 		}
 		a.visible = append(a.visible, item)
 	}
-	slices.SortFunc(a.visible, func(x, y alertRow) int { return compareAlertRows(x, y, a.newestFirst) })
+	slices.SortFunc(a.visible, func(x, y alertRow) int {
+		if a.sort != sortAlertDefault && a.sort != sortAlertNewest {
+			if n := compareAlertField(x, y, a.sort, now); n != 0 {
+				return n
+			}
+		}
+		return compareAlertRows(x, y, a.sort == sortAlertNewest)
+	})
 	a.moveTo(row)
 	for i, item := range a.visible {
 		if item.id == id {
@@ -100,6 +117,14 @@ func (a *alertsState) rebuild(id string, row int, now time.Time) {
 			break
 		}
 	}
+}
+
+func (a *alertsState) matches(row alertRow, filter fuzzyFilter, now time.Time) bool {
+	fields := a.view.Search
+	if fields != nil {
+		return matchesFields(filter, fields, func(field string) string { return row.field(field, now) })
+	}
+	return matchesFields(filter, defaultAlertFields[:], func(field string) string { return alertValue(row.field(field, now)) })
 }
 
 func (a *alertsState) moveTo(row int) { a.row = max(0, min(row, len(a.visible)-1)) }
@@ -292,7 +317,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 	case "s":
 		if len(a.rows) > 0 {
-			a.newestFirst = !a.newestFirst
+			a.sort = nextViewSort(a.sorts, a.sort)
 			a.rebuild(a.selection(), a.row, time.Now())
 		}
 	case "r":
