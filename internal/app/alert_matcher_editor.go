@@ -1,17 +1,11 @@
 package app
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
-	"io"
 	"slices"
-	"strings"
 
-	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"gopkg.in/yaml.v3"
 	"promtui/internal/parameters"
 	"promtui/internal/savedalerts"
 )
@@ -170,8 +164,6 @@ func (d *alertFiltersDialog) matcherDraft() []savedalerts.Matcher {
 	return result
 }
 
-type alertTemplateInput struct{ text textarea.Model }
-
 type alertTemplateFields struct {
 	Parameters []parameters.Parameter `yaml:"parameters,omitempty"`
 	Matchers   []savedalerts.Matcher  `yaml:"matchers"`
@@ -179,47 +171,12 @@ type alertTemplateFields struct {
 
 func (m *Model) openAlertTemplate(item savedalerts.Filter) tea.Cmd {
 	d := &m.alerts.saved
-	raw, err := yaml.Marshal(alertTemplateFields{item.Parameters, item.Matchers})
+	template, err := newSavedYAML(alertTemplateFields{item.Parameters, item.Matchers})
 	if err != nil {
-		d.err = fmt.Errorf("show template: %w", err)
+		d.err = err
 		return nil
 	}
-	d.mode = alertSavedTemplate
-	text := textarea.New()
-	text.Prompt, text.ShowLineNumbers = "", false
-	text.CharLimit, text.MaxHeight, text.MaxWidth = 0, 0, 0
-	text.SetVirtualCursor(false)
-	text.SetValue(string(raw))
-	if text.Value() != string(raw) {
-		d.mode, d.err = alertSavedBrowse, errors.New("template does not fit the editor")
-		return nil
-	}
-	d.template.text = text
+	d.mode, d.template = alertSavedTemplate, template
 	m.sizeAlertSavedInputs()
 	return d.template.text.Focus()
-}
-
-func (t *alertTemplateInput) edit(msg tea.Msg) tea.Cmd {
-	var cmd tea.Cmd
-	t.text, cmd = t.text.Update(msg)
-	return cmd
-}
-
-func (t *alertTemplateInput) filter(name string) (savedalerts.Filter, error) {
-	dec := yaml.NewDecoder(bytes.NewBufferString(t.text.Value()))
-	dec.KnownFields(true)
-	var fields alertTemplateFields
-	if err := dec.Decode(&fields); err != nil {
-		return savedalerts.Filter{}, fmt.Errorf("invalid template YAML: %w", err)
-	}
-	if err := dec.Decode(new(yaml.Node)); err != io.EOF {
-		if err == nil {
-			err = errors.New("expected one YAML document")
-		}
-		return savedalerts.Filter{}, fmt.Errorf("invalid template YAML: %w", err)
-	}
-	if strings.TrimSpace(name) == "" {
-		return savedalerts.Filter{}, errors.New("enter a name")
-	}
-	return savedalerts.Filter{Name: name, Parameters: fields.Parameters, Matchers: fields.Matchers}, nil
 }

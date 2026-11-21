@@ -284,6 +284,25 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onAlertsCompleted(v, time.Now())
 	case alertsTick:
 		return m, m.onAlertsTick(time.Time(v))
+	case templateClipboard:
+		if m.quitting || m.parameterDialog != nil {
+			return m, nil
+		}
+		if m.activeTab == alertsTab && m.alerts.saved.mode == alertSavedTemplate && m.alerts.saved.template == v.editor {
+			if v.err != nil {
+				m.alerts.saved.err = fmt.Errorf("clipboard: %w", v.err)
+				return m, nil
+			}
+			return m, m.alertSavedInput(tea.PasteMsg{Content: v.value})
+		}
+		if m.activeTab == promQLTab && m.panel == savedTemplateKeys && m.savedTemplate.editor == v.editor {
+			if v.err != nil {
+				m.savedTemplate.err = fmt.Errorf("clipboard: %w", v.err)
+				return m, nil
+			}
+			return m, m.editTemplate(tea.PasteMsg{Content: v.value})
+		}
+		return m, nil
 	case alertClipboard:
 		return m, m.applyAlertClipboard(v)
 	case alertLabelsCopied:
@@ -402,6 +421,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.quitting || m.activeTab != promQLTab {
 			return m, nil
+		} else if m.panel == savedTemplateKeys {
+			return m, m.editTemplate(v)
 		} else if m.panel&savedQueryKeys != 0 {
 			return m, m.editSavedInput(v)
 		} else if m.resultFilter.input.Focused() {

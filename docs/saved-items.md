@@ -38,6 +38,14 @@ expression in the editor without executing it or changing the selected
 connection, query mode, time range, history, or existing results. Local
 Prometheus parser diagnostics don't prevent loading MetricsQL expressions.
 
+To make a template in the app, save a query, select it in the browser, and
+press **t**. Edit its `expression` and `parameters` as YAML, then save with
+**Ctrl+Enter**. On a template, **u** opens this same editor instead of replacing
+the saved text with the resolved expression. To make it a plain query again,
+remove `parameters`. A plain query (no `parameters` field) does not interpret
+any dollar signs, preserving older collections. Use `parameters: []` to
+enable template escaping without a prompt.
+
 Example `queries.yaml`:
 
 ```yaml

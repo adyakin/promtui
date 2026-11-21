@@ -105,12 +105,6 @@ func (f Filter) validateStored() error {
 
 func (f Filter) clone() Filter {
 	f.Matchers = slices.Clone(f.Matchers)
-	f.Parameters = slices.Clone(f.Parameters)
-	for i, p := range f.Parameters {
-		if p.Default != nil {
-			value := *p.Default
-			f.Parameters[i].Default = &value
-		}
-	}
+	f.Parameters = parameters.CloneDefinitions(f.Parameters)
 	return f
 }

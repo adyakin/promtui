@@ -4,6 +4,7 @@ package parameters
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -15,6 +16,32 @@ type Parameter struct {
 }
 
 type Values map[string]string
+
+// CloneDefinitions copies defaults without conflating an absent and empty list.
+func CloneDefinitions(src []Parameter) []Parameter {
+	defs := slices.Clone(src)
+	for i, p := range defs {
+		if p.Default != nil {
+			value := *p.Default
+			defs[i].Default = &value
+		}
+	}
+	return defs
+}
+
+// DecodeDefinitions rejects null list members, which the YAML decoder would
+// silently drop when decoding into a slice of structs.
+func DecodeDefinitions(node *yaml.Node, defs *[]Parameter) error {
+	if node.Kind != yaml.SequenceNode || node.ShortTag() != "!!seq" {
+		return fmt.Errorf("line %d: parameters must be a list", node.Line)
+	}
+	for _, entry := range node.Content {
+		if entry.Kind != yaml.MappingNode || entry.ShortTag() != "!!map" {
+			return fmt.Errorf("line %d: expected a mapping in parameters", entry.Line)
+		}
+	}
+	return node.Decode(defs)
+}
 
 func (p Parameter) MarshalYAML() (any, error) {
 	var value *yaml.Node

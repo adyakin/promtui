@@ -183,38 +183,34 @@ func (m *Model) backSavedQueries() {
 }
 
 func (m *Model) loadSavedQuery() tea.Cmd {
-	q := &m.savedQueries
-	saved := q.queries[q.selectedIndex()]
-	if len(saved.Parameters) != 0 {
-		return m.openParameters(saved.Name, saved.Parameters, func(values parameters.Values) (tea.Cmd, error) {
-			expression, err := parameters.Resolve(saved.Expression, values)
+	browser := &m.savedQueries
+	item := browser.queries[browser.selectedIndex()]
+	apply := func(values parameters.Values) (tea.Cmd, error) {
+		expression := item.Expression
+		if item.Parameters != nil {
+			var err error
+			expression, err = parameters.Resolve(expression, values)
 			if err != nil {
 				return nil, err
 			}
-			next := m.editor
-			next.SetValue(expression) // Same cursor placement as history restore.
-			if next.Value() != expression {
-				return nil, errors.New("this expression exceeds editor limits or contains unsupported characters")
-			}
-			m.editor = next
-			m.backSavedQueries()
-			m.cursor = -1
-			m.diagnostic = editor.Diagnostic(expression)
-			return m.editor.Focus(), nil
-		})
+		}
+		next := m.editor
+		next.SetValue(expression) // Same cursor placement as history restore.
+		if next.Value() != expression {
+			return nil, errors.New("this expression exceeds editor limits or contains unsupported characters")
+		}
+		m.editor = next
+		m.backSavedQueries()
+		m.cursor = -1
+		m.diagnostic = editor.Diagnostic(expression)
+		return m.editor.Focus(), nil
 	}
-	expression := saved.Expression
-	next := m.editor
-	next.SetValue(expression) // Same cursor placement as history restore.
-	if next.Value() != expression {
-		q.err = errors.New("this expression exceeds editor limits or contains unsupported characters")
-		return nil
+	if len(item.Parameters) != 0 {
+		return m.openParameters(item.Name, item.Parameters, apply)
 	}
-	m.editor = next
-	m.backSavedQueries()
-	m.cursor = -1
-	m.diagnostic = editor.Diagnostic(expression)
-	return m.editor.Focus()
+	cmd, err := apply(nil)
+	browser.err = err
+	return cmd
 }
 
 func (m *Model) applySavedAction() tea.Cmd {
@@ -230,7 +226,7 @@ func (m *Model) applySavedAction() tea.Cmd {
 		snapshot, err = q.snapshot.Rename(q.target, q.input.Value())
 		message = "Query renamed"
 	case updateSaved:
-		snapshot, err = q.snapshot.Update(q.target, q.expression, q.queries[q.target].Parameters)
+		snapshot, err = q.snapshot.Update(q.target, q.expression, nil)
 		message = "Query updated"
 		if err == nil && q.queries[q.target].Expression == q.expression {
 			message = "Query already up to date"

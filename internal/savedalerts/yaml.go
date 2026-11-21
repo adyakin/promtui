@@ -2,9 +2,10 @@ package savedalerts
 
 import (
 	"fmt"
-	"strings"
 
 	"gopkg.in/yaml.v3"
+	"promtui/internal/parameters"
+	"promtui/internal/saveditems"
 )
 
 type collection struct {
@@ -81,23 +82,11 @@ func checkFields(node *yaml.Node, kind string, fields map[string]yaml.Kind, requ
 }
 
 func (f Filter) MarshalYAML() (any, error) {
-	type parameter struct {
-		Name    string     `yaml:"name"`
-		Default *yaml.Node `yaml:"default,omitempty"`
-	}
-	items := make([]parameter, len(f.Parameters))
-	for i, p := range f.Parameters {
-		items[i].Name = p.Name
-		if p.Default != nil {
-			node := textNode(*p.Default)
-			items[i].Default = &node
-		}
-	}
 	return struct {
-		Name       yaml.Node   `yaml:"name"`
-		Matchers   []Matcher   `yaml:"matchers"`
-		Parameters []parameter `yaml:"parameters,omitempty"`
-	}{textNode(f.Name), f.Matchers, items}, nil
+		Name       yaml.Node              `yaml:"name"`
+		Matchers   []Matcher              `yaml:"matchers"`
+		Parameters []parameters.Parameter `yaml:"parameters,omitempty"`
+	}{saveditems.StringNode(f.Name), f.Matchers, f.Parameters}, nil
 }
 
 func (m Matcher) MarshalYAML() (any, error) {
@@ -105,15 +94,5 @@ func (m Matcher) MarshalYAML() (any, error) {
 		Label    yaml.Node `yaml:"label"`
 		Operator yaml.Node `yaml:"operator"`
 		Value    yaml.Node `yaml:"value"`
-	}{textNode(m.Label), textNode(m.Operator), textNode(m.Value)}, nil
-}
-
-func textNode(s string) yaml.Node {
-	node := yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s}
-	// Implicitly indented blocks and YAML line-break normalization can
-	// otherwise change the original bytes when the file is reloaded.
-	if strings.ContainsAny(s, "\n\r\u0085\u2028\u2029") {
-		node.Style = yaml.DoubleQuotedStyle
-	}
-	return node
+	}{saveditems.StringNode(m.Label), saveditems.StringNode(m.Operator), saveditems.StringNode(m.Value)}, nil
 }

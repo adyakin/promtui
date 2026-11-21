@@ -31,12 +31,12 @@ const (
 	savedNameKeys
 	savedConfirmKeys
 	queryErrorKeys
-	savedTemplateKeys keyScope = 1 << 16
-	savedQueryKeys             = savedBrowserKeys | savedSearchKeys | savedNameKeys | savedConfirmKeys
-	resultKeys                 = tableKeys | graphKeys
-	mainKeys                   = editKeys | resultKeys
-	scrollKeys                 = helpKeys | detailKeys | labelKeys | queryErrorKeys
-	allKeys                    = mainKeys | completionKeys | historyKeys | scrollKeys | rangeKeys | seriesKeys | filterKeys | savedQueryKeys | savedTemplateKeys
+	savedTemplateKeys
+	savedQueryKeys = savedBrowserKeys | savedSearchKeys | savedNameKeys | savedConfirmKeys
+	resultKeys     = tableKeys | graphKeys
+	mainKeys       = editKeys | resultKeys
+	scrollKeys     = helpKeys | detailKeys | labelKeys | queryErrorKeys
+	allKeys        = mainKeys | completionKeys | historyKeys | scrollKeys | rangeKeys | seriesKeys | filterKeys | savedQueryKeys | savedTemplateKeys
 )
 
 type binding struct {
@@ -86,14 +86,11 @@ var bindings = []binding{
 	{"savedSearch", "/", "/", "/ Search", savedBrowserKeys},
 	{"savedRename", "e", "e", "e Rename", savedBrowserKeys},
 	{"savedUpdate", "u", "u", "u Update", savedBrowserKeys},
-	{"savedCreateTemplate", "p", "p", "p Create", savedBrowserKeys},
+	{"savedEditTemplate", "t", "t", "t Template", savedBrowserKeys},
 	{"savedDelete", "d", "d", "d Delete", savedBrowserKeys},
 	{"savedSearchDone", "enter", "Enter", "Enter Done", savedSearchKeys},
 	{"savedApply", "enter", "Enter", "Enter Confirm", savedNameKeys | savedConfirmKeys},
-	{"savedTemplateApply", "ctrl+enter ctrl+g", "Ctrl+Enter", "Ctrl+Enter Apply", savedTemplateKeys},
-	{"savedTemplateFocus", "tab up down shift+tab", "Tab Next", "Tab Next", savedTemplateKeys},
-	{"savedTemplateAdd", "ctrl+a", "^A Add", "^A Add", savedTemplateKeys},
-	{"savedTemplateRemove", "ctrl+d", "^D Remove", "^D Remove", savedTemplateKeys},
+	{"savedTemplateApply", "ctrl+enter ctrl+g", "Ctrl+Enter", "Ctrl+Enter Save", savedTemplateKeys},
 	{"cancelOrQuit", "ctrl+c", "Ctrl+C", "Ctrl+C Quit", allKeys},
 	{"back", "esc", "Esc", "Esc Back", allKeys &^ resultKeys},
 	{"help", "?", "?", "? Help", resultKeys | helpKeys | detailKeys},
@@ -140,6 +137,8 @@ func (m *Model) available(b binding, scope keyScope) bool {
 	switch b.id {
 	case "queryError", "copyQueryError":
 		return m.queryPhase == queryFailed
+	case "savedEditTemplate":
+		return m.savedQueries.selectedIndex() >= 0
 	case "graph":
 		return m.opt.Graphics
 	case "series":
@@ -239,6 +238,9 @@ func (m *Model) promQLFooter() string {
 		}
 		if b.id == "scroll" && scope == queryErrorKeys && m.width < 27 {
 			hint = "↑↓"
+		}
+		if b.id == "savedTemplateApply" && m.width < 30 {
+			hint = "^Enter OK"
 		}
 		if b.id == "back" && (scope&savedQueryKeys != 0 || scope == savedTemplateKeys) {
 			hint = "Esc Cancel"
@@ -559,11 +561,11 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		return m.openSavedAction(renameSaved)
 	case "savedUpdate":
 		q := &m.savedQueries
-		if idx := q.selectedIndex(); idx >= 0 && len(q.queries[idx].Parameters) > 0 {
+		if idx := q.selectedIndex(); idx >= 0 && q.queries[idx].Parameters != nil {
 			return m.openSavedTemplateEditor(idx) // Explicit template editing for parameterized items.
 		}
 		return m.openSavedAction(updateSaved)
-	case "savedCreateTemplate":
+	case "savedEditTemplate":
 		if q := &m.savedQueries; q.selectedIndex() >= 0 {
 			return m.openSavedTemplateEditor(q.selectedIndex())
 		}
@@ -574,16 +576,6 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		return m.applySavedAction()
 	case "savedTemplateApply":
 		return m.applySavedTemplate()
-	case "savedTemplateFocus":
-		delta := 1
-		if key == "up" || key == "shift+tab" {
-			delta = -1
-		}
-		return m.moveTemplateFocus(delta)
-	case "savedTemplateAdd":
-		return m.addTemplateParam()
-	case "savedTemplateRemove":
-		return m.removeTemplateParam()
 	case "complete":
 		return m.schedule(true)
 	case "recall":

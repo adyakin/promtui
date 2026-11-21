@@ -51,7 +51,7 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		return m.silenceModalKey(k, key, time.Now()), true
 	}
-	if m.activeTab == promQLTab && m.panel&(savedQueryKeys|queryErrorKeys) != 0 {
+	if m.activeTab == promQLTab && m.panel&(savedQueryKeys|savedTemplateKeys|queryErrorKeys) != 0 {
 		return nil, false // Modal dialogs own tab and connection shortcuts.
 	}
 	if m.activeTab == alertsTab && m.alerts.saved.mode != alertSavedClosed {

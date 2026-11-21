@@ -48,8 +48,7 @@ func (m *Model) sizeAlertSavedInputs() {
 			r.value.SetCursor(r.value.Position())
 		}
 	case alertSavedTemplate:
-		d.template.text.SetWidth(width - 4)
-		d.template.text.SetHeight(max(1, min(m.height-8, 14)))
+		d.template.resize(width, m.height)
 	}
 }
 
@@ -107,6 +106,9 @@ func alertSavedError(err error) string {
 func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 	d := &m.alerts.saved
 	width := m.alertSavedWidth()
+	if d.mode == alertSavedTemplate {
+		return m.savedTemplateOverlay(d.template, "Edit Alert Filter Template", d.items[d.target].Name, d.err, width)
+	}
 	inner, maxRows := width-2, m.height-5
 	title, meta := "Saved Alerts", ""
 	var rows []string
@@ -197,27 +199,6 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 				}
 			}
 			rows = append(rows, dialogRow(l+" "+op+v, "", inner, i == d.row))
-		}
-	case alertSavedTemplate:
-		title = "Edit Alert Filter Template"
-		if room > 2 {
-			text(d.items[d.target].Name + " · YAML")
-		}
-		if c := d.template.text.Cursor(); c != nil {
-			cursor = nativeCursor(min(width-2, 2+c.X), 1+len(rows)+c.Y)
-		}
-		editorRows := strings.Split(ansi.Strip(d.template.text.View()), "\n")
-		available := room - len(rows)
-		if len(editorRows) > available {
-			start := 0
-			if cursor != nil {
-				start = max(0, cursor.Y-len(rows)-available)
-				cursor.Y -= start
-			}
-			editorRows = editorRows[start : start+available]
-		}
-		for _, line := range editorRows {
-			text(line)
 		}
 	}
 	for _, line := range errorRows {

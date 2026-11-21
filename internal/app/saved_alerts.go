@@ -77,7 +77,7 @@ type alertFiltersDialog struct {
 	input        textinput.Model
 	editors      []alertMatcherInputs
 	field        int
-	template     alertTemplateInput
+	template     *savedYAML
 	clipboard    *alertClipboardRequest
 }
 
@@ -198,7 +198,7 @@ func (m *Model) alertSavedKey(k tea.KeyPressMsg) tea.Cmd {
 		m.alertSavedBack()
 		return nil
 	}
-	if key == "ctrl+v" && (d.input.Focused() || d.mode == alertSavedTemplate || d.mode == alertSavedManual && d.field != 1) {
+	if key == "ctrl+v" && (d.input.Focused() || d.mode == alertSavedManual && d.field != 1) {
 		req := &alertClipboardRequest{d.mode, d.row, d.field}
 		d.clipboard = req
 		return func() tea.Msg {
@@ -211,11 +211,12 @@ func (m *Model) alertSavedKey(k tea.KeyPressMsg) tea.Cmd {
 		return m.alertMatcherKey(k)
 	case alertSavedTemplate:
 		if key == "ctrl+enter" || key == "ctrl+g" {
-			item, err := d.template.filter(d.items[d.target].Name)
-			if err != nil {
+			var fields alertTemplateFields
+			if err := d.template.decode(&fields); err != nil {
 				d.err = err
 				return nil
 			}
+			item := savedalerts.Filter{Name: d.items[d.target].Name, Matchers: fields.Matchers, Parameters: fields.Parameters}
 			next, err := d.snapshot.Update(d.target, item)
 			m.finishAlertSave(next, err)
 			return nil
@@ -283,7 +284,7 @@ func (m *Model) alertSavedKey(k tea.KeyPressMsg) tea.Cmd {
 
 func (m *Model) applyAlertClipboard(p alertClipboard) tea.Cmd {
 	d := &m.alerts.saved
-	if m.quitting || m.activeTab != alertsTab || m.parameterDialog != nil ||
+	if m.quitting || m.activeTab != alertsTab || m.parameterDialog != nil || p.request == nil ||
 		d.clipboard != p.request || *p.request != (alertClipboardRequest{d.mode, d.row, d.field}) {
 		return nil
 	}
