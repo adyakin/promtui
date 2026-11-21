@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
+	"gopkg.in/yaml.v3"
 	"promtui/internal/parameters"
 	"promtui/internal/savedalerts"
 )
@@ -211,12 +212,16 @@ func (m *Model) alertSavedKey(k tea.KeyPressMsg) tea.Cmd {
 		return m.alertMatcherKey(k)
 	case alertSavedTemplate:
 		if key == "ctrl+enter" || key == "ctrl+g" {
-			var fields alertTemplateFields
+			var fields yaml.Node
 			if err := d.template.decode(&fields); err != nil {
 				d.err = err
 				return nil
 			}
-			item := savedalerts.Filter{Name: d.items[d.target].Name, Matchers: fields.Matchers, Parameters: fields.Parameters}
+			item := savedalerts.Filter{Name: d.items[d.target].Name}
+			if err := item.DecodeTemplate(&fields); err != nil {
+				d.err = fmt.Errorf("invalid template YAML: %w", err)
+				return nil
+			}
 			next, err := d.snapshot.Update(d.target, item)
 			m.finishAlertSave(next, err)
 			return nil

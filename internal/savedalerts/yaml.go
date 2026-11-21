@@ -30,6 +30,28 @@ func (f *Filter) UnmarshalYAML(node *yaml.Node) error {
 	return node.Decode((*plain)(f))
 }
 
+// DecodeTemplate decodes the editable part of a saved filter. Its name is
+// managed separately by the browser.
+func (f *Filter) DecodeTemplate(node *yaml.Node) error {
+	if node.Kind == yaml.DocumentNode && len(node.Content) == 1 {
+		node = node.Content[0]
+	}
+	if err := checkFields(node, "filter template", map[string]yaml.Kind{
+		"matchers": yaml.SequenceNode, "parameters": yaml.SequenceNode,
+	}, "matchers"); err != nil {
+		return err
+	}
+	var fields struct {
+		Matchers   []Matcher              `yaml:"matchers"`
+		Parameters []parameters.Parameter `yaml:"parameters"`
+	}
+	if err := node.Decode(&fields); err != nil {
+		return err
+	}
+	f.Matchers, f.Parameters = fields.Matchers, fields.Parameters
+	return nil
+}
+
 func (m *Matcher) UnmarshalYAML(node *yaml.Node) error {
 	if err := checkFields(node, "matcher", map[string]yaml.Kind{
 		"label": yaml.ScalarNode, "operator": yaml.ScalarNode, "value": yaml.ScalarNode,

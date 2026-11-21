@@ -25,18 +25,6 @@ type Query struct {
 }
 
 func (q Query) MarshalYAML() (any, error) {
-	// yaml.v3 uses an implicitly indented block for multiline strings.
-	// Quote leading indentation so the first line cannot set the block's
-	// indent ambiguously or strip whitespace from the expression.
-	text := func(s string) yaml.Node {
-		node := yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s}
-		first := strings.TrimLeft(s, "\n")
-		if strings.ContainsAny(s, "\r\u0085\u2028\u2029") ||
-			strings.Contains(s, "\n") && (strings.HasPrefix(first, " ") || strings.HasPrefix(first, "\t")) {
-			node.Style = yaml.DoubleQuotedStyle
-		}
-		return node
-	}
 	var defs *[]parameters.Parameter
 	if q.Parameters != nil {
 		defs = &q.Parameters
@@ -45,7 +33,7 @@ func (q Query) MarshalYAML() (any, error) {
 		Name       yaml.Node               `yaml:"name"`
 		Expression yaml.Node               `yaml:"expression"`
 		Parameters *[]parameters.Parameter `yaml:"parameters,omitempty"`
-	}{text(q.Name), text(q.Expression), defs}, nil
+	}{saveditems.StringNode(q.Name), saveditems.StringNode(q.Expression), defs}, nil
 }
 
 // Do not let yaml.v3 coerce booleans or numbers to strings and then rewrite them.
@@ -96,6 +84,19 @@ type Snapshot struct {
 
 type collection struct {
 	Queries []Query `yaml:"queries"`
+}
+
+func (c *collection) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode || len(node.Content) != 2 ||
+		node.Content[0].Value != "queries" || node.Content[1].Kind != yaml.SequenceNode {
+		return errors.New("expected a queries list")
+	}
+	for _, entry := range node.Content[1].Content {
+		if entry.Kind != yaml.MappingNode || entry.ShortTag() != "!!map" {
+			return fmt.Errorf("line %d: expected a mapping in queries", entry.Line)
+		}
+	}
+	return node.Content[1].Decode(&c.Queries)
 }
 
 var ErrChanged = saveditems.ErrChanged

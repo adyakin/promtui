@@ -140,6 +140,7 @@ func TestRejectsInvalidChanges(t *testing.T) {
 func TestRejectsCorruptYAML(t *testing.T) {
 	for _, raw := range []string{
 		"", "queries: [", "queries: null", "queries: {}", "{}",
+		"queries: [null, {name: CPU, expression: up}]",
 		"queries: []\n---\nqueries: []\n",
 		"queries: [{name: CPU, expression: up}, {name: ' cpu ', expression: up}]",
 		"queries: [{name: CPU, expression: true}]",

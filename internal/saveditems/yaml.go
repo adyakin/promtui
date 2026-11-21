@@ -10,7 +10,9 @@ import (
 // line-break normalization.
 func StringNode(s string) yaml.Node {
 	n := yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s}
-	if strings.ContainsAny(s, "\n\r\u0085\u2028\u2029") {
+	first := strings.TrimLeft(s, "\n")
+	if strings.ContainsAny(s, "\r\u0085\u2028\u2029") ||
+		strings.Contains(s, "\n") && (strings.HasPrefix(first, " ") || strings.HasPrefix(first, "\t")) {
 		n.Style = yaml.DoubleQuotedStyle
 	}
 	return n
