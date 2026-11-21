@@ -30,18 +30,14 @@ func (m *Model) openSavedTemplateEditor(target int) tea.Cmd {
 	q := &m.savedQueries
 	item := q.queries[target]
 	fields := queryTemplateFields{Expression: saveditems.StringNode(item.Expression)}
-	defs := item.Parameters
-	if defs == nil {
-		// Explicitly opening the template editor lets a user opt a plain
-		// expression into template validation, with no automatic rewriting.
-		defs = []parameters.Parameter{}
-	}
-	if err := fields.Parameters.Encode(defs); err != nil {
-		q.err = err
-		return nil
-	}
-	if fields.Parameters.Kind == yaml.SequenceNode && len(fields.Parameters.Content) == 0 {
-		fields.Parameters.Style = yaml.FlowStyle
+	if item.Parameters != nil {
+		if err := fields.Parameters.Encode(item.Parameters); err != nil {
+			q.err = err
+			return nil
+		}
+		if len(item.Parameters) == 0 {
+			fields.Parameters.Style = yaml.FlowStyle
+		}
 	}
 	edit, err := newSavedYAML(fields)
 	if err != nil {

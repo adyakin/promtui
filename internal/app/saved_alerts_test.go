@@ -137,6 +137,12 @@ func TestSavedAlertTemplateUpdatePreservesParameters(t *testing.T) {
 	if m.alerts.saved.mode != alertSavedTemplate || !strings.Contains(m.alerts.saved.template.text.Value(), "${service}") {
 		t.Fatal("update reinserted the resolved value instead of the template")
 	}
+	m.alerts.saved.template.text.SetValue("matchers:\n  - label: service\n    operator: '='\n    value: static\nparameters: [null]\n")
+	savedCtrl(m, tea.KeyEnter)
+	if m.alerts.saved.err == nil || m.alerts.saved.mode != alertSavedTemplate {
+		t.Fatal("template silently discarded a malformed parameter")
+	}
+	press(m, tea.KeyEsc, 'u')
 	savedCtrl(m, tea.KeyEnter)
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != raw {

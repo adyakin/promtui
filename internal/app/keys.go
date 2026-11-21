@@ -587,7 +587,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		m.dismiss()
 		m.diagnostic = editor.Diagnostic(m.editor.Value())
 	case "restore":
-		m.editor.SetValue(m.options[m.selected])
+		m.editor.SetExactValue(m.options[m.selected])
 		m.cursor = -1
 		return m.schedule(false)
 	case "selectAssist":

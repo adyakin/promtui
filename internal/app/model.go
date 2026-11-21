@@ -62,7 +62,7 @@ type promQLState struct {
 	chart graphState
 	assist
 	opt                                   Options
-	editor                                textarea.Model
+	editor                                editor.Buffer
 	table                                 ui.Table
 	resultFilter                          resultFilterState
 	entries                               []history.Entry
@@ -88,7 +88,7 @@ func New(o Options, entries []history.Entry) *Model {
 	e.CharLimit = 65536
 	e.MaxWidth = 0
 	m := &Model{alerts: newAlertsState(o.Connection.Alerts), targets: newTargetsState(o.Connection), silences: newSilencesState(), routing: newRoutingState(), rules: newRulesState(o.Connection), promQLState: promQLState{
-		opt: o, entries: entries, cursor: -1, editor: e, resultFilter: newResultFilter(), status: "Ready", summary: "No query executed",
+		opt: o, entries: entries, cursor: -1, editor: editor.Buffer{Model: e}, resultFilter: newResultFilter(), status: "Ready", summary: "No query executed",
 	}}
 	m.resize(80, 24)
 	return m
@@ -216,12 +216,12 @@ func (m *Model) recall(delta int) {
 		return
 	}
 	if i == -1 {
-		m.editor.SetValue(m.draft)
+		m.editor.SetExactValue(m.draft)
 	} else {
 		if m.cursor == -1 {
 			m.draft = m.editor.Value()
 		}
-		m.editor.SetValue(m.entries[i].Query)
+		m.editor.SetExactValue(m.entries[i].Query)
 	}
 	m.cursor = i
 }

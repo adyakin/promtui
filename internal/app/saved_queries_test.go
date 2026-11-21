@@ -319,11 +319,42 @@ func TestSavedQueryLiteralEscapingIsOptIn(t *testing.T) {
 		t.Fatalf("legacy text was interpreted: %q", m.editor.Value())
 	}
 	savedCtrl(m, 'o')
+	press(m, 't')
+	savedCtrl(m, tea.KeyEnter)
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != raw {
+		t.Fatal("unmodified template editor changed legacy storage or meaning")
+	}
 	press(m, tea.KeyDown, 'e')
 	savedCtrl(m, 'u')
 	savedPaste(m, "Escape")
 	press(m, tea.KeyEnter, tea.KeyEnter)
 	if m.editor.Value() != `up{job="${literal}"}` || m.parameterDialog != nil {
 		t.Fatalf("an escaped query did not load directly: %q", m.editor.Value())
+	}
+}
+
+func TestSavedPromQLPreservesRawWhitespaceInTheEditor(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queries.yaml")
+	const raw = `queries:
+  - name: With tab
+    expression: "up${ws}+1"
+    parameters:
+      - name: ws
+        default: "\t"
+`
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m := New(Options{SavedQueriesPath: path}, nil)
+	savedCtrl(m, 'o')
+	press(m, tea.KeyEnter)
+	savedCtrl(m, tea.KeyEnter)
+	if got := m.editor.Value(); got != "up\t+1" || m.parameterDialog != nil || !m.editor.Focused() {
+		t.Fatalf("saved expression was not loaded exactly: %q", got)
+	}
+	press(m, '2')
+	if got := m.editor.Value(); got != "up\t+12" || editor.Position(m.editor) != len(got) {
+		t.Fatalf("editing lost raw whitespace or cursor position: %q", got)
 	}
 }

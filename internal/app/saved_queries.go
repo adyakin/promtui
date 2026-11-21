@@ -195,7 +195,7 @@ func (m *Model) loadSavedQuery() tea.Cmd {
 			}
 		}
 		next := m.editor
-		next.SetValue(expression) // Same cursor placement as history restore.
+		next.SetExactValue(expression) // Same cursor placement as history restore.
 		if next.Value() != expression {
 			return nil, errors.New("this expression exceeds editor limits or contains unsupported characters")
 		}
@@ -289,7 +289,8 @@ func (m *Model) savedQueryLayer() (*lipgloss.Layer, *tea.Cursor) {
 	}
 	input := func() {
 		inputRow = len(rows)
-		text(ansi.Strip(q.input.View()))
+		value, _ := dialogInput(q.input, inner-2)
+		text(value)
 	}
 	// Keep the header, status and footer uncovered, including at 24×10.
 	maxRows := m.height - 5
@@ -360,8 +361,9 @@ func (m *Model) savedQueryLayer() (*lipgloss.Layer, *tea.Cursor) {
 	y := 1 + (m.height-3-len(rows)-2)/2
 	layer := lipgloss.NewLayer(renderFrame(title, meta, rows, width, true, dialogSurface)).X(x).Y(y).Z(1)
 	if inputRow >= 0 && !m.quitting {
-		if c := q.input.Cursor(); c != nil {
-			return layer, nativeCursor(min(x+width-2, x+2+c.X), y+1+inputRow)
+		if q.input.Focused() {
+			_, col := dialogInput(q.input, inner-2)
+			return layer, nativeCursor(min(x+width-2, x+2+col), y+1+inputRow)
 		}
 	}
 	return layer, nil

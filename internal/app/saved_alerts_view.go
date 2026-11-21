@@ -117,10 +117,11 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 		rows = append(rows, dialogSurface.Render(" "+ansi.Truncate(ui.Plain(s), inner-2, "…")+" "))
 	}
 	input := func() {
-		if c := d.input.Cursor(); c != nil {
-			cursor = nativeCursor(min(width-2, 2+c.X), 1+len(rows))
+		value, col := dialogInput(d.input, inner-2)
+		if d.input.Focused() {
+			cursor = nativeCursor(min(width-2, 2+col), 1+len(rows))
 		}
-		text(ansi.Strip(d.input.View()))
+		text(value)
 	}
 	var errorRows []string
 	if d.err != nil {
@@ -180,25 +181,21 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 		meta = fmt.Sprintf("%d/%d", d.row+1, len(d.editors))
 		for i := first; i < min(first+room, len(d.editors)); i++ {
 			r := &d.editors[i]
-			l := fixedMatcherColumn(r.label.View(), label)
-			v := fixedMatcherColumn(r.value.View(), value)
+			l, lx := dialogInput(r.label, label)
+			v, vx := dialogInput(r.value, value)
 			op := fmt.Sprintf(" %-2s ", alertOperators[r.operator])
 			if i == d.row {
 				pos := 4
 				switch d.field {
 				case 0:
-					if c := r.label.Cursor(); c != nil {
-						cursor = nativeCursor(pos+min(c.X, label-1), 1+len(rows))
-					}
+					cursor = nativeCursor(pos+lx, 1+len(rows))
 				case 1:
 					op = fmt.Sprintf("[%2s]", alertOperators[r.operator])
 				case 2:
-					if c := r.value.Cursor(); c != nil {
-						cursor = nativeCursor(pos+label+5+min(c.X, value-1), 1+len(rows))
-					}
+					cursor = nativeCursor(pos+label+5+vx, 1+len(rows))
 				}
 			}
-			rows = append(rows, dialogRow(l+" "+op+v, "", inner, i == d.row))
+			rows = append(rows, dialogRow(fixedMatcherColumn(l, label)+" "+op+fixedMatcherColumn(v, value), "", inner, i == d.row))
 		}
 	}
 	for _, line := range errorRows {

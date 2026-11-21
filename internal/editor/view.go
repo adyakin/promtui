@@ -6,13 +6,12 @@ import (
 	"strings"
 	"unicode"
 
-	"charm.land/bubbles/v2/textarea"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func Position(e textarea.Model) int {
+func Position(e Buffer) int {
 	lines := strings.Split(e.Value(), "\n")
 	n := 0
 	for _, l := range lines[:e.Line()] {
@@ -65,7 +64,7 @@ func styles(s string, pos int) map[int]int {
 
 // The textarea handles editing; this viewport paints real source offsets, so
 // ANSI sequences never enter the buffer or interfere with cursor movement.
-func View(e textarea.Model, width int) (rows []string, cursorX, cursorY int) {
+func View(e Buffer, width int) (rows []string, cursorX, cursorY int) {
 	s := e.Value()
 	lines := strings.Split(s, "\n")
 	pos := Position(e)
@@ -81,7 +80,7 @@ func View(e textarea.Model, width int) (rows []string, cursorX, cursorY int) {
 		var b strings.Builder
 		left := 0
 		if i == e.Line() {
-			col := ansi.StringWidth(lines[i][:pos-off])
+			col := ansi.StringWidth(strings.Map(displayRune, lines[i][:pos-off]))
 			left = max(0, col-room+2)
 			cursorX, cursorY = ansi.StringWidth(prefix)+col-left, i-start
 		}
@@ -99,10 +98,7 @@ func View(e textarea.Model, width int) (rows []string, cursorX, cursorY int) {
 				fmt.Fprintf(&b, "\x1b[0;%dm", base+style%8)
 				last = style
 			}
-			if unicode.IsControl(r) {
-				r = ' '
-			}
-			b.WriteRune(r)
+			b.WriteRune(displayRune(r))
 		}
 		b.WriteString("\x1b[0m")
 		line := ansi.Cut(b.String(), left, left+room)
@@ -113,4 +109,11 @@ func View(e textarea.Model, width int) (rows []string, cursorX, cursorY int) {
 		off += len(lines[i]) + 1
 	}
 	return
+}
+
+func displayRune(r rune) rune {
+	if unicode.IsControl(r) {
+		return ' '
+	}
+	return r
 }

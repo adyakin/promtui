@@ -162,7 +162,7 @@ func (m *Model) accept() {
 	lineStart := strings.LastIndexByte(s[:c.Start], '\n') + 1
 	col := utf8.RuneCountInString(s[lineStart:c.Start])
 	line := m.editor.Line()
-	m.editor.SetValue(s[:c.Start] + v + s[c.End:])
+	m.editor.SetExactValue(s[:c.Start] + v + s[c.End:])
 	for m.editor.Line() > line {
 		m.editor.CursorStart()
 		m.editor.CursorUp()

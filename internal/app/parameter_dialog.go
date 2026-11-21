@@ -173,10 +173,15 @@ func (m *Model) parameterLayer() (*lipgloss.Layer, *tea.Cursor) {
 	room := maxRows - len(errors)
 	first := dialogStart(d.row, len(d.fields), room)
 	labelWidth := width / 3
+	caret := 0
 	for i := first; i < min(first+room, len(d.fields)); i++ {
 		f := &d.fields[i]
 		label := ansi.Truncate(f.definition.Name, labelWidth, "…")
-		row := fmt.Sprintf("%-*s", labelWidth, label) + " " + ui.Plain(ansi.Strip(f.input.View()))
+		value, col := dialogInput(f.input, f.input.Width())
+		if i == d.row {
+			caret = col
+		}
+		row := fmt.Sprintf("%-*s", labelWidth, label) + " " + value
 		rows = append(rows, dialogRow(row, "", width-2, i == d.row))
 	}
 	for _, line := range errors {
@@ -189,9 +194,7 @@ func (m *Model) parameterLayer() (*lipgloss.Layer, *tea.Cursor) {
 	}
 	layer := lipgloss.NewLayer(renderFrame("Parameters: "+ui.Plain(d.name), meta, rows, width, true, dialogSurface)).X(x).Y(y).Z(2)
 	if len(d.fields) != 0 && !m.quitting {
-		if c := d.fields[d.row].input.Cursor(); c != nil {
-			return layer, nativeCursor(min(x+width-2, x+5+labelWidth+c.X), y+1+d.row-first)
-		}
+		return layer, nativeCursor(min(x+width-2, x+5+labelWidth+caret), y+1+d.row-first)
 	}
 	return layer, nil
 }
