@@ -42,7 +42,7 @@ func (m *Model) targetsFooter() string {
 		return format(hints, "Esc Close")
 	}
 	if a.input.Focused() {
-		return format([]string{"Enter Apply", "Alt+S Status", "Alt+0–2 Tabs"}, "Esc Cancel")
+		return format([]string{"Enter Apply", "Alt+S Status", "Alt+0–3 Tabs"}, "Esc Cancel")
 	}
 	var hints []string
 	hasError := a.hasError()
@@ -72,7 +72,7 @@ func (m *Model) targetsFooter() string {
 			hints = append(hints, dropped)
 		}
 	}
-	hints = append(hints, "0–2 Tabs", "Alt+S Status")
+	hints = append(hints, "0–3 Tabs", "Alt+S Status")
 	if len(m.opt.Connections) > 0 {
 		hints = append(hints, m.connectionHint())
 	}
@@ -367,7 +367,7 @@ func (m *Model) targetTextDialog() (name string, rows []string, width, room int)
 	lines := []string{targetSelectHint + " target · PgUp/PgDn Page · Home/End First/last",
 		targetDetailsHint + " · " + targetFilterHint + " (Enter apply, Esc cancel)", targetSourcesHint + " · " + targetHealthHint + " · " + targetSortHint,
 		targetDroppedHint + "/active · " + targetRefreshHint + " (auto every 30s)", "Alt+S: show request status",
-		"0–2 Tabs (Alt+0–2 while typing) · c Connections · q Quit"}
+		"0–3 Tabs (Alt+0–3 while typing) · c Connections · q Quit"}
 	if a.dialog == targetDetails {
 		name, lines = "Target details", targetDetailLines(a.detail)
 	} else if a.dialog == targetStatus {

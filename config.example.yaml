@@ -1,4 +1,5 @@
 insecure_skip_verify: false
+# silence_creator: on-call
 
 general:
   default_connection: local

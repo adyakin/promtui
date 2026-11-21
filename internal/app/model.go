@@ -34,6 +34,7 @@ type Options struct {
 	Limit, HistoryLimit   int
 	HistoryPath           string
 	SavedQueriesPath      string
+	SilenceCreator        string
 }
 type completed struct {
 	id      int
@@ -47,6 +48,7 @@ type Model struct {
 	shellState
 	promQLState
 	alerts        alertsState
+	silences      silencesState
 	targets       targetsState
 	httpClients   map[bool]*http.Client
 	programStatus terminalStatus
@@ -81,7 +83,7 @@ func New(o Options, entries []history.Entry) *Model {
 	e.Prompt = "│ "
 	e.CharLimit = 65536
 	e.MaxWidth = 0
-	m := &Model{alerts: newAlertsState(o.Connection.Alerts), targets: newTargetsState(o.Connection), promQLState: promQLState{
+	m := &Model{alerts: newAlertsState(o.Connection.Alerts), targets: newTargetsState(o.Connection), silences: newSilencesState(), promQLState: promQLState{
 		opt: o, entries: entries, cursor: -1, editor: e, resultFilter: newResultFilter(), status: "Ready", summary: "No query executed",
 	}}
 	m.resize(80, 24)
@@ -95,6 +97,7 @@ func (m *Model) resize(w, h int) {
 	m.targets.input.SetWidth(max(1, w-13))
 	m.resultFilter.input.SetWidth(max(1, w-13))
 	m.sizeSavedInput()
+	m.sizeSilenceInputs()
 }
 func (m *Model) Init() tea.Cmd {
 	if m.opt.ProbeGraphics {
@@ -233,6 +236,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case silencesLoaded:
+		return m, m.onSilencesLoaded(v, time.Now())
+	case silencesTick:
+		return m, m.onSilencesTick(time.Time(v))
+	case silenceDetailLoaded:
+		return m, m.onSilenceDetailLoaded(v)
+	case silenceMatchesLoaded:
+		m.onSilenceMatchesLoaded(v)
+		return m, nil
+	case silenceClipboard:
+		if m.pickingConnection || m.quitting {
+			return m, nil
+		}
+		return m, m.editSilenceInput(v)
+	case silenceWritten:
+		return m, m.onSilenceWritten(v, time.Now())
 	case targetsCompleted:
 		return m, m.onTargetsCompleted(v, time.Now())
 	case targetsTick:
@@ -332,6 +351,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		if m.pickingConnection {
 			return m, nil
+		}
+		if !m.quitting && (m.activeTab == silencesTab || m.silences.editor != nil) {
+			return m, m.editSilenceInput(v)
 		}
 		if !m.quitting && m.activeTab == alertsTab && m.alerts.input.Focused() {
 			return m, m.alerts.edit(v)

@@ -32,10 +32,13 @@ func (m *Model) alertsFooter() string {
 		} else if m.width < 41 {
 			hints[0], hints[1] = hints[1], hints[0]
 		}
+		if m.opt.Connection.AlertmanagerURL != "" {
+			hints = append([]string{"s Silence"}, hints...)
+		}
 	case a.dialog == alertStatusDialog:
 		hints, back = []string{"↑↓ Scroll", "? Help"}, "Esc Close"
 	case a.input.Focused():
-		hints, back = []string{"Enter Apply", "Alt+S Status", "Alt+0–2 Tabs"}, "Esc Cancel"
+		hints, back = []string{"Enter Apply", "Alt+S Status", "Alt+0–3 Tabs"}, "Esc Cancel"
 		if len(m.opt.Connections) > 0 {
 			hints = append(hints, m.connectionHint())
 		}
@@ -64,7 +67,7 @@ func (m *Model) alertsFooter() string {
 		if a.cancel != nil {
 			hints = append(hints, "Ctrl+C Cancel")
 		}
-		hints = append(hints, "? Help", "Alt+S Status", "0–2 Tabs", "q Quit")
+		hints = append(hints, "? Help", "Alt+S Status", "0–3 Tabs", "q Quit")
 	}
 	return m.formatFooter(hints, back, "   ")
 }
@@ -184,6 +187,9 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 		}
 	}
 	status := a.status()
+	if a.silenceNotice != "" {
+		status = a.silenceNotice + " · " + status
+	}
 	if a.detailStatus != "" && !a.help && a.dialog == alertDetails {
 		status = a.detailStatus + " · " + status
 	}
@@ -192,7 +198,7 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	}
 	base := strings.Join([]string{m.header(alertsTab), frame("Alerts", meta, body, m.width, true),
 		lipgloss.NewStyle().Width(m.width).Render(ansi.Truncate(" "+status, m.width, "…")), m.footer()}, "\n")
-	if a.help || a.dialog != alertNoDialog {
+	if (a.help || a.dialog != alertNoDialog) && m.silences.editor == nil {
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.alertDialogLayer(now)).Render(), nil
 	}
 	return base, cursor
@@ -309,13 +315,16 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 		switch a.dialog {
 		case alertDetails:
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll details", "p: load the generator query in PromQL", "y: copy all labels", "Esc or ?: return to details"}
+			if m.opt.Connection.AlertmanagerURL != "" {
+				lines = append(lines, "s: create a silence from this alert’s labels")
+			}
 		case alertStatusDialog:
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll status", "Esc or ?: return to status"}
 		default:
 			lines = []string{"↑ / ↓: select an alert", "PgUp / PgDn: move one page", "Home / End: first / last alert",
 				"Enter: open details", "/: fuzzy-filter alerts (Enter applies, Esc cancels)",
 				"s: cycle sort modes", "r: refresh now (auto-refresh every 30s)",
-				"Alt+S: show request status", "0 / 1 / 2 or Alt+0 / 1 / 2: switch tabs", "q: quit"}
+				"Alt+S: show request status", "0–3 or Alt+0–3: switch tabs", "q: quit"}
 			if a.err != nil {
 				lines = append([]string{"↑ / ↓ and PgUp / PgDn: scroll the error"}, lines...)
 			}

@@ -41,9 +41,10 @@ type terminalSettings struct {
 }
 
 type settings struct {
-	General  generalSettings  `toml:"general" yaml:"general"`
-	Query    querySettings    `toml:"query" yaml:"query"`
-	Terminal terminalSettings `toml:"terminal" yaml:"terminal"`
+	SilenceCreator string           `toml:"silence_creator" yaml:"silence_creator"`
+	General        generalSettings  `toml:"general" yaml:"general"`
+	Query          querySettings    `toml:"query" yaml:"query"`
+	Terminal       terminalSettings `toml:"terminal" yaml:"terminal"`
 }
 
 type Config struct {

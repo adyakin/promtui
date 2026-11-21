@@ -53,6 +53,12 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 		m.alerts.requestID, m.alerts.tickQueued = requestID, tickQueued
 		m.alerts.input.SetWidth(max(1, m.width-13))
 
+		m.silences.stop()
+		serial, silenceTick := m.silences.serial, m.silences.tickQueued
+		m.silences = newSilencesState()
+		m.silences.serial, m.silences.tickQueued = serial, silenceTick
+		m.sizeSilenceInputs()
+
 		m.targets.stop(nil)
 		targetID, targetTick, dialogID := m.targets.requestID, m.targets.tickQueued, m.targets.dialogID
 		m.targets = newTargetsState(next)
@@ -61,6 +67,9 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 		m.opt.Connection = next
 		if m.activeTab == targetsTab {
 			return m.refreshTargets()
+		}
+		if m.activeTab == silencesTab {
+			return m.refreshSilences()
 		}
 		return m.refreshAlerts()
 	}

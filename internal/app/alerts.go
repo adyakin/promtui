@@ -57,6 +57,7 @@ type alertsState struct {
 	offset, helpOffset int
 	help               bool
 	detailStatus       string
+	silenceNotice      string
 
 	requestID   uint64
 	cancel      context.CancelFunc
@@ -138,9 +139,16 @@ func (a *alertsState) stop() {
 }
 
 func (m *Model) refreshAlerts() tea.Cmd {
+	if m.activeTab != alertsTab {
+		return nil
+	}
+	return m.fetchAlerts()
+}
+
+func (m *Model) fetchAlerts() tea.Cmd {
 	a := &m.alerts
 	base := m.opt.Connection.AlertmanagerURL
-	if m.activeTab != alertsTab || m.quitting || base == "" || a.cancel != nil {
+	if m.quitting || base == "" || a.cancel != nil {
 		return nil
 	}
 	timeout := m.opt.Timeout
@@ -195,7 +203,11 @@ func (m *Model) onAlertsCompleted(v alertsCompleted, now time.Time) tea.Cmd {
 	}
 	a.cancel = nil
 	a.lastDone = now
+	dialog := a.dialog
 	a.setError(v.err)
+	if m.silences.editor != nil && m.silences.editor.fromAlert {
+		a.dialog = dialog // Returning from the draft must restore the alert snapshot.
+	}
 	if v.err == nil {
 		id, row := a.selection(), a.row
 		a.lastOK = now
@@ -274,6 +286,10 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 			if !a.help && a.dialog == alertDetails {
 				return m.loadAlertQuery()
 			}
+		case "s":
+			if !a.help && a.dialog == alertDetails {
+				return m.openSilenceEditor(nil, a.detail.Labels, true)
+			}
 		case "y":
 			if !a.help && a.dialog == alertDetails {
 				text := alertLabelText(a.detail.Labels)
@@ -325,6 +341,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 			a.rebuild(a.selection(), a.row, time.Now())
 		}
 	case "r":
+		a.silenceNotice = ""
 		return m.refreshAlerts()
 	case "?":
 		a.help, a.helpOffset = true, 0
