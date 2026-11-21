@@ -188,7 +188,7 @@ func (m *Model) silenceModalKey(key string, k tea.KeyPressMsg, now time.Time) te
 }
 
 func (m *Model) silenceEditorKey(key string, k tea.KeyPressMsg, now time.Time) tea.Cmd {
-	if k.Mod == tea.ModAlt && (k.Code == 'c' || k.Code >= '0' && k.Code <= '3') {
+	if k.Mod == tea.ModAlt && (k.Code == 'c' || k.Code >= '0' && k.Code < '0'+rune(len(tabs))) {
 		return nil // These shell shortcuts are disabled while a draft is open.
 	}
 	s, d := &m.silences, m.silences.editor

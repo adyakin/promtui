@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/fogleman/gg v1.3.0
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
+	github.com/prometheus/alertmanager v0.28.1
 	github.com/prometheus/common v0.67.1
 	github.com/prometheus/prometheus v0.305.5
 	github.com/sahilm/fuzzy v0.1.1
