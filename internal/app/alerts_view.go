@@ -26,7 +26,12 @@ func (m *Model) alertsFooter() string {
 	case a.help:
 		hints, back = []string{"↑↓ Scroll"}, "Esc Close"
 	case a.dialog == alertDetails:
-		hints, back = []string{"↑↓ Scroll", "y Copy labels", "? Help"}, "Esc Close"
+		hints, back = []string{"↑↓ Scroll", "p Load in PromQL", "y Copy labels", "? Help"}, "Esc Close"
+		if m.width < 29 {
+			hints = []string{"p PromQL", "↑↓ Scroll"}
+		} else if m.width < 41 {
+			hints[0], hints[1] = hints[1], hints[0]
+		}
 	case a.dialog == alertStatusDialog:
 		hints, back = []string{"↑↓ Scroll", "? Help"}, "Esc Close"
 	case a.input.Focused():
@@ -179,8 +184,8 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 		}
 	}
 	status := a.status()
-	if a.copyStatus != "" && !a.help && a.dialog == alertDetails {
-		status = a.copyStatus + " · " + status
+	if a.detailStatus != "" && !a.help && a.dialog == alertDetails {
+		status = a.detailStatus + " · " + status
 	}
 	if a.err == nil && len(a.visible) > 0 {
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
@@ -303,7 +308,7 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 		name = "Alerts help"
 		switch a.dialog {
 		case alertDetails:
-			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll details", "y: copy all labels", "Esc or ?: return to details"}
+			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll details", "p: load the generator query in PromQL", "y: copy all labels", "Esc or ?: return to details"}
 		case alertStatusDialog:
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll status", "Esc or ?: return to status"}
 		default:

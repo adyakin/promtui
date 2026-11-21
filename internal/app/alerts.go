@@ -56,7 +56,7 @@ type alertsState struct {
 	detail             alertRow // Snapshot so refresh cannot move or replace the open details.
 	offset, helpOffset int
 	help               bool
-	copyStatus         string
+	detailStatus       string
 
 	requestID   uint64
 	cancel      context.CancelFunc
@@ -270,6 +270,10 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 			a.help, a.helpOffset = !a.help, 0
 		case "up", "down", "pgup", "pgdown":
 			m.scrollAlertDialog(key)
+		case "p":
+			if !a.help && a.dialog == alertDetails {
+				return m.loadAlertQuery()
+			}
 		case "y":
 			if !a.help && a.dialog == alertDetails {
 				text := alertLabelText(a.detail.Labels)
@@ -306,7 +310,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 		a.moveTo(len(a.visible) - 1)
 	case "enter":
 		if len(a.visible) > 0 {
-			a.dialog, a.detail, a.offset, a.copyStatus = alertDetails, a.visible[a.row], 0, ""
+			a.dialog, a.detail, a.offset, a.detailStatus = alertDetails, a.visible[a.row], 0, ""
 		}
 	case "/":
 		if !a.lastOK.IsZero() {
