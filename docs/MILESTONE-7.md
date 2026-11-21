@@ -1,5 +1,8 @@
 # Milestone 7 — Saved Queries MVP
 
+This page describes the original release. For current paths, parameters, and
+shortcuts, see [Saved queries and alert filters](saved-items.md).
+
 Saved queries are global to the user, independent of PromQL history, and shared
 by all Prometheus and VictoriaMetrics connections.
 

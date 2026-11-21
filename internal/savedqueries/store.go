@@ -6,36 +6,34 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+	"promtui/internal/parameters"
+	"promtui/internal/saveditems"
 )
 
+// A query without parameters is a literal expression. A parameterized query
+// stores its expression as a template plus declarations for ${name}
+// references. An absent parameters field preserves literal legacy queries;
+// an explicit empty list enables template escaping without a parameter prompt.
 type Query struct {
-	Name       string `yaml:"name"`
-	Expression string `yaml:"expression"`
+	Name       string                 `yaml:"name"`
+	Expression string                 `yaml:"expression"`
+	Parameters []parameters.Parameter `yaml:"parameters,omitempty"`
 }
 
 func (q Query) MarshalYAML() (any, error) {
-	// yaml.v3 uses an implicitly indented block for multiline strings.
-	// Quote leading indentation so the first line cannot set the block's
-	// indent ambiguously or strip whitespace from the expression.
-	text := func(s string) yaml.Node {
-		node := yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s}
-		first := strings.TrimLeft(s, "\n")
-		if strings.ContainsAny(s, "\r\u0085\u2028\u2029") ||
-			strings.Contains(s, "\n") && (strings.HasPrefix(first, " ") || strings.HasPrefix(first, "\t")) {
-			node.Style = yaml.DoubleQuotedStyle
-		}
-		return node
+	var defs *[]parameters.Parameter
+	if q.Parameters != nil {
+		defs = &q.Parameters
 	}
 	return struct {
-		Name       yaml.Node `yaml:"name"`
-		Expression yaml.Node `yaml:"expression"`
-	}{text(q.Name), text(q.Expression)}, nil
+		Name       yaml.Node               `yaml:"name"`
+		Expression yaml.Node               `yaml:"expression"`
+		Parameters *[]parameters.Parameter `yaml:"parameters,omitempty"`
+	}{saveditems.StringNode(q.Name), saveditems.StringNode(q.Expression), defs}, nil
 }
 
 // Do not let yaml.v3 coerce booleans or numbers to strings and then rewrite them.
@@ -50,12 +48,32 @@ func (q *Query) UnmarshalYAML(node *yaml.Node) error {
 			if value.Kind != yaml.ScalarNode || value.ShortTag() != "!!str" {
 				return fmt.Errorf("line %d: %s must be a string", value.Line, key.Value)
 			}
+		case "parameters":
+			var defs []parameters.Parameter
+			if err := parameters.DecodeDefinitions(value, &defs); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("line %d: unexpected query field %q", key.Line, key.Value)
 		}
 	}
 	type plain Query
 	return node.Decode((*plain)(q))
+}
+
+func queriesEqual(a, b []Query) bool {
+	return slices.EqualFunc(a, b, func(x, y Query) bool {
+		if x.Name != y.Name || x.Expression != y.Expression || (x.Parameters == nil) != (y.Parameters == nil) || len(x.Parameters) != len(y.Parameters) {
+			return false
+		}
+		for i := range x.Parameters {
+			p, q := x.Parameters[i], y.Parameters[i]
+			if p.Name != q.Name || (p.Default == nil) != (q.Default == nil) || (p.Default != nil && *p.Default != *q.Default) {
+				return false
+			}
+		}
+		return true
+	})
 }
 
 type Snapshot struct {
@@ -68,28 +86,27 @@ type collection struct {
 	Queries []Query `yaml:"queries"`
 }
 
-var ErrChanged = errors.New("file changed on disk; close and reopen Saved Queries")
-
-func read(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+func (c *collection) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode || len(node.Content) != 2 ||
+		node.Content[0].Value != "queries" || node.Content[1].Kind != yaml.SequenceNode {
+		return errors.New("expected a queries list")
 	}
-	if err != nil {
-		return nil, err
+	for _, entry := range node.Content[1].Content {
+		if entry.Kind != yaml.MappingNode || entry.ShortTag() != "!!map" {
+			return fmt.Errorf("line %d: expected a mapping in queries", entry.Line)
+		}
 	}
-	if !info.Mode().IsRegular() {
-		return nil, &os.PathError{Op: "read", Path: path, Err: errors.New("expected a regular file")}
-	}
-	return os.ReadFile(path)
+	return node.Content[1].Decode(&c.Queries)
 }
+
+var ErrChanged = saveditems.ErrChanged
 
 func Open(path string) (Snapshot, error) {
 	s := Snapshot{path: path}
 	if path == "" {
 		return s, errors.New("saved queries path is not configured")
 	}
-	raw, err := read(path)
+	raw, err := saveditems.Read(path)
 	if err != nil {
 		return s, fmt.Errorf("read saved queries: %w", err)
 	}
@@ -114,7 +131,7 @@ func Open(path string) (Snapshot, error) {
 	for i, q := range data.Queries {
 		name, err := checkedName(data.Queries[:i], q.Name, -1)
 		if err == nil {
-			err = CheckExpression(q.Expression)
+			err = checkTemplate(q.Parameters, q.Expression)
 		}
 		if err != nil {
 			return s, fmt.Errorf("invalid queries.yaml entry %d: %w", i+1, err)
@@ -125,7 +142,13 @@ func Open(path string) (Snapshot, error) {
 	return s, nil
 }
 
-func (s Snapshot) Queries() []Query { return slices.Clone(s.queries) }
+func (s Snapshot) Queries() []Query {
+	queries := slices.Clone(s.queries)
+	for i := range queries {
+		queries[i].Parameters = parameters.CloneDefinitions(queries[i].Parameters)
+	}
+	return queries
+}
 
 func CheckExpression(expression string) error {
 	if strings.TrimSpace(expression) == "" {
@@ -135,27 +158,31 @@ func CheckExpression(expression string) error {
 }
 
 func checkedName(queries []Query, name string, except int) (string, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", errors.New("enter a name")
-	}
-	for i, q := range queries {
-		if i != except && strings.EqualFold(q.Name, name) {
-			return "", fmt.Errorf("a query named %q already exists", q.Name)
-		}
-	}
-	return name, nil
+	return saveditems.CheckName(name, len(queries), except, func(i int) string { return queries[i].Name }, "query")
 }
 
-func (s Snapshot) Add(name, expression string) (Snapshot, error) {
+func (s Snapshot) Add(name, expression string, definitions []parameters.Parameter) (Snapshot, error) {
 	name, err := checkedName(s.queries, name, -1)
 	if err != nil {
 		return s, err
 	}
-	if err := CheckExpression(expression); err != nil {
+	if err := checkTemplate(definitions, expression); err != nil {
 		return s, err
 	}
-	return s.commit(append(s.Queries(), Query{name, expression}))
+	next := append(s.Queries(), Query{Name: name, Expression: expression, Parameters: parameters.CloneDefinitions(definitions)})
+	return s.commit(next)
+}
+
+// checkTemplate applies template rules only when parameters were declared;
+// plain items keep their legacy literal-dollar behavior.
+func checkTemplate(definitions []parameters.Parameter, expression string) error {
+	if err := CheckExpression(expression); err != nil {
+		return err
+	}
+	if definitions == nil {
+		return nil
+	}
+	return parameters.Validate(definitions, expression)
 }
 
 func (s Snapshot) Rename(index int, name string) (Snapshot, error) {
@@ -171,15 +198,16 @@ func (s Snapshot) Rename(index int, name string) (Snapshot, error) {
 	return s.commit(next)
 }
 
-func (s Snapshot) Update(index int, expression string) (Snapshot, error) {
+func (s Snapshot) Update(index int, expression string, definitions []parameters.Parameter) (Snapshot, error) {
 	if index < 0 || index >= len(s.queries) {
 		return s, errors.New("select a saved query")
 	}
-	if err := CheckExpression(expression); err != nil {
+	if err := checkTemplate(definitions, expression); err != nil {
 		return s, err
 	}
 	next := s.Queries()
 	next[index].Expression = expression
+	next[index].Parameters = parameters.CloneDefinitions(definitions)
 	return s.commit(next)
 }
 
@@ -190,23 +218,12 @@ func (s Snapshot) Delete(index int) (Snapshot, error) {
 	return s.commit(slices.Delete(s.Queries(), index, index+1))
 }
 
-func (s Snapshot) checkVersion() error {
-	current, err := read(s.path)
-	if err != nil {
-		return err
-	}
-	if (current == nil) != (s.version == nil) || !bytes.Equal(current, s.version) {
-		return ErrChanged
-	}
-	return nil
-}
-
 func (s Snapshot) commit(next []Query) (Snapshot, error) {
 	fail := func(err error) (Snapshot, error) {
 		return s, fmt.Errorf("write saved queries %s: %w", s.path, err)
 	}
-	if slices.Equal(s.queries, next) {
-		if err := s.checkVersion(); err != nil {
+	if queriesEqual(s.queries, next) {
+		if err := saveditems.CheckVersion(s.path, s.version); err != nil {
 			return fail(err)
 		}
 		return s, nil
@@ -215,30 +232,7 @@ func (s Snapshot) commit(next []Query) (Snapshot, error) {
 	if err != nil {
 		return fail(err)
 	}
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fail(err)
-	}
-	f, err := os.CreateTemp(dir, ".queries-*") // same filesystem, mode 0600
-	if err != nil {
-		return fail(err)
-	}
-	defer os.Remove(f.Name())
-	_, err = f.Write(raw)
-	if err == nil {
-		err = f.Sync()
-	}
-	closeErr := f.Close()
-	if err != nil {
-		return fail(err)
-	}
-	if closeErr != nil {
-		return fail(closeErr)
-	}
-	if err := s.checkVersion(); err != nil {
-		return fail(err)
-	}
-	if err := os.Rename(f.Name(), s.path); err != nil {
+	if err := saveditems.Write(s.path, s.version, raw); err != nil {
 		return fail(err)
 	}
 	s.version, s.queries = raw, next

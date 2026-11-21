@@ -1,0 +1,135 @@
+# Saved queries and alert filters
+
+Saved items are global across connections. PromQL expressions and Alerts label
+filters are stored in separate YAML files in `~/.config/promtui/`, regardless of
+`-config` and `-history`. If `queries.yaml` isn't there at startup, PromTUI
+continues to use an existing `~/.local/share/promtui/queries.yaml` in place.
+Neither file needs to exist before your first save.
+
+## Parameters
+
+Use `${name}` in an expression template or an alert matcher value. A name starts
+with an ASCII letter or underscore, and can then contain ASCII letters, digits,
+or underscores. Declare each name once; undeclared references, unused
+declarations, and malformed placeholders are errors. Multiple uses of the same
+name share one input.
+
+When you load a parameterized item, PromTUI prompts for its values. Optional
+`default` strings are prefilled and editable. Omit `default` to require input;
+`default: ""` is an explicitly empty default. In the dialog, use **Tab** or
+**Shift+Tab** to move between fields, and **Ctrl+Space** to supply an empty
+value. **Ctrl+Enter** (or **Ctrl+G**) applies; **Esc** returns to the browser
+without applying. Input fields are single-line; YAML defaults may contain
+newlines and are used exactly as stored when left unchanged.
+
+Substitution is **raw, single-pass string insertion**. PromTUI does not escape
+regex metacharacters or PromQL strings. For example, `.*${service}.*` with
+`service=okd4.prod` becomes `.*okd4.prod.*`, in which the dot is still a regex
+metacharacter. A value containing `${other}` is inserted literally, not
+expanded again. In template text, use `$${name}` for a literal `${name}`. Other
+dollar signs (for example, a regex end anchor) are literal.
+
+## Saved PromQL queries
+
+**Ctrl+S** in the editor saves its current expression. **Ctrl+O** opens the
+browser. Use **↑/↓** to select, **/** to search, **Enter** to load, **e** to rename,
+**u** to update, and **d** to delete after confirmation. Loading puts the
+expression in the editor without executing it or changing the selected
+connection, query mode, time range, history, or existing results. Local
+Prometheus parser diagnostics don't prevent loading MetricsQL expressions.
+
+To make a template in the app, save a query, select it in the browser, and
+press **t**. Edit its `expression` and `parameters` as YAML, then save with
+**Ctrl+Enter**. On a template, **u** opens this same editor instead of replacing
+the saved text with the resolved expression. To make it a plain query again,
+remove `parameters`. A plain query (no `parameters` field) does not interpret
+any dollar signs, preserving older collections. Use `parameters: []` to
+enable template escaping without a prompt.
+
+Example `queries.yaml`:
+
+```yaml
+queries:
+  - name: All CPU metrics
+    expression: node_cpu_seconds_total
+
+  - name: Idle CPU by instance
+    parameters:
+      - name: instance
+        default: server01:9100
+    expression: |
+      rate(node_cpu_seconds_total{
+        instance="${instance}",
+        mode="idle"
+      }[5m])
+
+  - name: Request rate by service
+    parameters:
+      - name: service
+    expression: |
+      sum(rate(http_requests_total{servicename="${service}"}[5m]))
+```
+
+## Saved Alerts
+
+**Ctrl+O** opens saved filters. Use **↑/↓** to select, **/** to search by name,
+**Enter** to load, **e** to rename, **u** to update, and **d** to delete after
+confirmation. Press **m** to edit the active label matchers, **x** to clear them
+without clearing fuzzy search, or **Ctrl+S** to save the active values as a new
+literal filter.
+
+In the matcher editor, **Tab** and **Shift+Tab** move between fields; **↑/↓**
+change rows. On the operator field, use **←/→** to choose an operator.
+**Ctrl+N** adds a row and **Ctrl+D** removes the current row. **Ctrl+Enter**
+(or **Ctrl+G**) applies, and **Esc** cancels.
+
+In the browser, **t** edits a filter's `matchers` and `parameters` as YAML;
+**Ctrl+Enter** saves that template without changing the active filter. **u**
+opens the same template editor for parameterized filters, so runtime values
+cannot replace their templates by accident. For a non-parameterized filter,
+**u** instead asks before replacing it with the active matchers.
+
+Use `=`, `!=`, `=~`, or `!~` for equality, inequality, regex, or negative regex.
+Regexes match the entire label value; absent labels are treated as empty
+strings. All matchers must match. An invalid resolved regex leaves the
+previous filter in place and can be corrected without reopening the browser.
+
+Filters run locally against the Alerts list and stay active on refresh or
+connection switch. Applying one doesn't change the fuzzy-search text, sort
+order, or connection. The file stores only label matchers and parameter
+definitions, not UI state. No Alertmanager silence or other server-side state
+is created.
+
+Example `alerts.yaml`:
+
+```yaml
+alerts:
+  - name: All HAProxy alerts
+    matchers:
+      - label: alertname
+        operator: "=~"
+        value: ".*HAProxy.*"
+
+  - name: HAProxy by service
+    parameters:
+      - name: service
+        default: okd4-prod
+    matchers:
+      - label: alertname
+        operator: "=~"
+        value: ".*HAProxy.*"
+      - label: servicename
+        operator: "="
+        value: "${service}"
+```
+
+## Managing YAML externally
+
+These files can be generated by tools such as Ansible or Jinja2. Keep item names
+unique regardless of case, quote strings that YAML might interpret as numbers
+or booleans, and use one YAML document per file. Reopen the browser to see
+external edits; if a file changed since you opened it, PromTUI rejects a stale
+save rather than replacing the updated collection. Invalid files aren't silently
+discarded. PromTUI writes a complete file atomically with private permissions.
+The on-disk check is not a lock; avoid writing the same file simultaneously
+from PromTUI and external automation.

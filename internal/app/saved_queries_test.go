@@ -36,7 +36,7 @@ func savedFixture(t *testing.T, names ...string) string {
 		t.Fatal(err)
 	}
 	for _, name := range names {
-		s, err = s.Add(name, "up\n+ 1")
+		s, err = s.Add(name, "up\n+ 1", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,8 +71,9 @@ func TestSaveQueryDialogAndEditorFocus(t *testing.T) {
 		t.Fatal("save modified the editor or ran the query")
 	}
 	s, err := savedqueries.Open(m.opt.SavedQueriesPath)
-	if err != nil || len(s.Queries()) != 2 || s.Queries()[1] != (savedqueries.Query{Name: "New", Expression: want}) {
-		t.Fatalf("wrong persisted query: %v, %v", s.Queries(), err)
+	got := s.Queries()
+	if err != nil || len(got) != 2 || got[1].Name != "New" || got[1].Expression != want || got[1].Parameters != nil {
+		t.Fatalf("wrong persisted query: %v, %v", got, err)
 	}
 	m.Update(savedFeedbackExpired(m.savedFeedbackID))
 	if m.savedFeedback != "" {
@@ -244,5 +245,116 @@ func TestSavedOverlayKeepsKittyPlacementAndBounds(t *testing.T) {
 	press(m, tea.KeyEsc, tea.KeyEsc)
 	if m.scope() != graphKeys || m.chart.selected != 0 {
 		t.Fatal("closing browser did not restore graph focus")
+	}
+}
+
+func TestSavedPromQLTemplateEditingAndRawLoading(t *testing.T) {
+	path := savedFixture(t, "MetricsQL")
+	m := New(Options{SavedQueriesPath: path}, nil)
+	press(m, 'i')
+	m.editor.SetValue("existing draft")
+	savedCtrl(m, 'o')
+	press(m, 't')
+	savedText(t, m.screen(), "Edit Expression Template")
+	m.Update(tea.KeyPressMsg{Code: '1', Mod: tea.ModAlt})
+	if m.activeTab != promQLTab || m.panel != savedTemplateKeys {
+		t.Fatal("template editor leaked a tab switch")
+	}
+	press(m, tea.KeyEsc, 't')
+	const template = `expression: |-
+  WITH (p = up{instance=~"${instance}"})
+  p + "${required}" + "$${literal}"
+parameters:
+  - name: instance
+    default: "srv.*"
+  - name: required
+`
+	m.savedTemplate.editor.text.Reset()
+	savedPaste(m, template)
+	savedCtrl(m, tea.KeyEnter)
+	if m.panel != savedBrowserKeys || m.editor.Value() != "existing draft" {
+		t.Fatalf("saving a template changed the editor or failed: %s", ansi.Strip(m.screen()))
+	}
+	press(m, tea.KeyEnter)
+	savedCtrl(m, tea.KeyEnter)
+	if m.parameterDialog == nil || m.parameterDialog.err == nil || m.editor.Value() != "existing draft" {
+		t.Fatal("applying without a required value changed the editor")
+	}
+	press(m, tea.KeyEsc, tea.KeyEnter)
+	press(m, tea.KeyTab)
+	savedPaste(m, "${instance}")
+	savedCtrl(m, tea.KeyEnter)
+	const want = "WITH (p = up{instance=~\"srv.*\"})\np + \"${instance}\" + \"${literal}\""
+	if m.editor.Value() != want || m.id != 0 || len(m.entries) != 0 {
+		t.Fatalf("invalid load or automatic execution: %q", m.editor.Value())
+	}
+	savedCtrl(m, 'o')
+	press(m, 'u')
+	text := m.savedTemplate.editor.text.Value()
+	if !strings.Contains(text, "${required}") || !strings.Contains(text, "$${literal}") || !strings.Contains(text, "default:") {
+		t.Fatalf("update replaced template or definitions: %s", text)
+	}
+	press(m, tea.KeyEsc, tea.KeyEsc)
+	if m.scope() != editKeys || m.editor.Value() != want {
+		t.Fatal("closing the template editor did not restore the original focus")
+	}
+}
+
+func TestSavedQueryLiteralEscapingIsOptIn(t *testing.T) {
+	m := New(Options{SavedQueriesPath: savedFixture(t)}, nil)
+	path := m.opt.SavedQueriesPath
+	const raw = `queries:
+  - name: Legacy
+    expression: 'up{job="${raw}/$${literal}"}'
+  - name: Escaping only
+    expression: 'up{job="$${literal}"}'
+    parameters: []
+`
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	savedCtrl(m, 'o')
+	press(m, tea.KeyEnter)
+	if m.editor.Value() != `up{job="${raw}/$${literal}"}` || m.parameterDialog != nil {
+		t.Fatalf("legacy text was interpreted: %q", m.editor.Value())
+	}
+	savedCtrl(m, 'o')
+	press(m, 't')
+	savedCtrl(m, tea.KeyEnter)
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != raw {
+		t.Fatal("unmodified template editor changed legacy storage or meaning")
+	}
+	press(m, tea.KeyDown, 'e')
+	savedCtrl(m, 'u')
+	savedPaste(m, "Escape")
+	press(m, tea.KeyEnter, tea.KeyEnter)
+	if m.editor.Value() != `up{job="${literal}"}` || m.parameterDialog != nil {
+		t.Fatalf("an escaped query did not load directly: %q", m.editor.Value())
+	}
+}
+
+func TestSavedPromQLPreservesRawWhitespaceInTheEditor(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queries.yaml")
+	const raw = `queries:
+  - name: With tab
+    expression: "up${ws}+1"
+    parameters:
+      - name: ws
+        default: "\t"
+`
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m := New(Options{SavedQueriesPath: path}, nil)
+	savedCtrl(m, 'o')
+	press(m, tea.KeyEnter)
+	savedCtrl(m, tea.KeyEnter)
+	if got := m.editor.Value(); got != "up\t+1" || m.parameterDialog != nil || !m.editor.Focused() {
+		t.Fatalf("saved expression was not loaded exactly: %q", got)
+	}
+	press(m, '2')
+	if got := m.editor.Value(); got != "up\t+12" || editor.Position(m.editor) != len(got) {
+		t.Fatalf("editing lost raw whitespace or cursor position: %q", got)
 	}
 }

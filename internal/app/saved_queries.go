@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/editor"
+	"promtui/internal/parameters"
 	"promtui/internal/savedqueries"
 	"promtui/internal/ui"
 )
@@ -182,19 +183,34 @@ func (m *Model) backSavedQueries() {
 }
 
 func (m *Model) loadSavedQuery() tea.Cmd {
-	q := &m.savedQueries
-	expression := q.queries[q.selectedIndex()].Expression
-	next := m.editor
-	next.SetValue(expression) // Same cursor placement as history restore.
-	if next.Value() != expression {
-		q.err = errors.New("this expression exceeds editor limits or contains unsupported characters")
-		return nil
+	browser := &m.savedQueries
+	item := browser.queries[browser.selectedIndex()]
+	apply := func(values parameters.Values) (tea.Cmd, error) {
+		expression := item.Expression
+		if item.Parameters != nil {
+			var err error
+			expression, err = parameters.Resolve(expression, values)
+			if err != nil {
+				return nil, err
+			}
+		}
+		next := m.editor
+		next.SetExactValue(expression) // Same cursor placement as history restore.
+		if next.Value() != expression {
+			return nil, errors.New("this expression exceeds editor limits or contains unsupported characters")
+		}
+		m.editor = next
+		m.backSavedQueries()
+		m.cursor = -1
+		m.diagnostic = editor.Diagnostic(expression)
+		return m.editor.Focus(), nil
 	}
-	m.editor = next
-	m.backSavedQueries()
-	m.cursor = -1
-	m.diagnostic = editor.Diagnostic(expression)
-	return m.editor.Focus()
+	if len(item.Parameters) != 0 {
+		return m.openParameters(item.Name, item.Parameters, apply)
+	}
+	cmd, err := apply(nil)
+	browser.err = err
+	return cmd
 }
 
 func (m *Model) applySavedAction() tea.Cmd {
@@ -204,13 +220,13 @@ func (m *Model) applySavedAction() tea.Cmd {
 	var message string
 	switch q.action {
 	case addSaved:
-		snapshot, err = q.snapshot.Add(q.input.Value(), q.expression)
+		snapshot, err = q.snapshot.Add(q.input.Value(), q.expression, nil)
 		message = "Query saved"
 	case renameSaved:
 		snapshot, err = q.snapshot.Rename(q.target, q.input.Value())
 		message = "Query renamed"
 	case updateSaved:
-		snapshot, err = q.snapshot.Update(q.target, q.expression)
+		snapshot, err = q.snapshot.Update(q.target, q.expression, nil)
 		message = "Query updated"
 		if err == nil && q.queries[q.target].Expression == q.expression {
 			message = "Query already up to date"
@@ -247,7 +263,7 @@ type savedFeedbackExpired int
 
 func (m *Model) savedDialogWidth() int {
 	width := 48
-	if m.panel == savedBrowserKeys || m.panel == savedSearchKeys {
+	if m.panel == savedBrowserKeys || m.panel == savedSearchKeys || m.panel == savedTemplateKeys {
 		width = 56
 	}
 	return min(width, m.width-2)
@@ -273,7 +289,8 @@ func (m *Model) savedQueryLayer() (*lipgloss.Layer, *tea.Cursor) {
 	}
 	input := func() {
 		inputRow = len(rows)
-		text(ansi.Strip(q.input.View()))
+		value, _ := dialogInput(q.input, inner-2)
+		text(value)
 	}
 	// Keep the header, status and footer uncovered, including at 24×10.
 	maxRows := m.height - 5
@@ -344,8 +361,9 @@ func (m *Model) savedQueryLayer() (*lipgloss.Layer, *tea.Cursor) {
 	y := 1 + (m.height-3-len(rows)-2)/2
 	layer := lipgloss.NewLayer(renderFrame(title, meta, rows, width, true, dialogSurface)).X(x).Y(y).Z(1)
 	if inputRow >= 0 && !m.quitting {
-		if c := q.input.Cursor(); c != nil {
-			return layer, nativeCursor(min(x+width-2, x+2+c.X), y+1+inputRow)
+		if q.input.Focused() {
+			_, col := dialogInput(q.input, inner-2)
+			return layer, nativeCursor(min(x+width-2, x+2+col), y+1+inputRow)
 		}
 	}
 	return layer, nil

@@ -51,8 +51,14 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		return m.silenceModalKey(k, key, time.Now()), true
 	}
-	if m.activeTab == promQLTab && m.panel&(savedQueryKeys|queryErrorKeys) != 0 {
+	if m.activeTab == promQLTab && m.panel&(savedQueryKeys|savedTemplateKeys|queryErrorKeys) != 0 {
 		return nil, false // Modal dialogs own tab and connection shortcuts.
+	}
+	if m.activeTab == alertsTab && m.alerts.saved.mode != alertSavedClosed {
+		if key.Keystroke() == "ctrl+q" {
+			return m.act("quit", "", 0), true
+		}
+		return m.alertSavedKey(key), true
 	}
 	if m.activeTab == routingTab && m.routing.dialog != routingNoDialog && !m.pickingConnection {
 		return m.routingModalKey(key.String()), true
@@ -182,6 +188,13 @@ func (m *Model) textInputFocused() bool {
 }
 
 func (m *Model) footer() string {
+	if m.parameterDialog != nil {
+		hints := []string{"Ctrl+Enter Apply", "Tab Next", "Ctrl+Space Empty"}
+		if m.width < 30 {
+			hints[0] = "^Enter OK"
+		}
+		return m.formatFooter(hints, "Esc Cancel", "  ")
+	}
 	if m.pickingConnection {
 		return m.formatFooter([]string{"↑↓ Select", "Enter Switch"}, "Esc Back", "   ")
 	}
@@ -278,6 +291,15 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 		}
 		return strings.Join(lines, "\n"), nil
 	}
+	screen, cursor := m.renderWorkspace()
+	if m.parameterDialog != nil {
+		layer, cursor := m.parameterLayer()
+		return lipgloss.NewCompositor(lipgloss.NewLayer(screen), layer).Render(), cursor
+	}
+	return screen, cursor
+}
+
+func (m *Model) renderWorkspace() (string, *tea.Cursor) {
 	// A queued upload cannot be interrupted. Keep the old workspace visible
 	// until Bubble Tea has queued the delete, so images never cover another tab.
 	if m.activeTab == promQLTab || m.chart.displayed.cols != 0 || m.chart.sending {
@@ -289,6 +311,10 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 	}
 	if m.activeTab == alertsTab {
 		screen, cursor := m.alertsScreen(time.Now())
+		if m.alerts.saved.mode != alertSavedClosed && !m.pickingConnection {
+			layer, caret := m.alertSavedLayer()
+			return lipgloss.NewCompositor(lipgloss.NewLayer(screen), layer).Render(), caret
+		}
 		screen, cursor = m.withSilenceDialog(screen, cursor, time.Now())
 		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
 	}

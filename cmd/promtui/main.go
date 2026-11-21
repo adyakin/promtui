@@ -60,7 +60,8 @@ func run(args []string, stdout io.Writer) error {
 		*name = cfg.General.Default
 	}
 	o := app.Options{Connections: cfg.Connections, Timeout: cfg.Query.Timeout, Window: cfg.Query.Range, Step: *step, Limit: cfg.Query.MaxSeries, HistoryPath: *hist, HistoryLimit: cfg.General.History}
-	o.SavedQueriesPath = filepath.Join(dataDir, "queries.yaml")
+	o.SavedQueriesPath = savedQueriesPath(dir, dataDir)
+	o.SavedAlertsPath = filepath.Join(dir, "alerts.yaml")
 	o.SilenceCreator = cfg.SilenceCreator
 	o.ProgramStatus = cfg.Terminal.ProgramStatus && term.IsTerminal(os.Stdout.Fd())
 	switch *graphics {

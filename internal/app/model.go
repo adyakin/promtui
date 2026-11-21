@@ -34,6 +34,7 @@ type Options struct {
 	Limit, HistoryLimit   int
 	HistoryPath           string
 	SavedQueriesPath      string
+	SavedAlertsPath       string
 	SilenceCreator        string
 }
 type completed struct {
@@ -47,20 +48,21 @@ type copied struct{ err error }
 type Model struct {
 	shellState
 	promQLState
-	alerts        alertsState
-	silences      silencesState
-	targets       targetsState
-	routing       routingState
-	rules         rulesState
-	httpClients   map[bool]*http.Client
-	programStatus terminalStatus
+	alerts          alertsState
+	silences        silencesState
+	targets         targetsState
+	routing         routingState
+	rules           rulesState
+	httpClients     map[bool]*http.Client
+	programStatus   terminalStatus
+	parameterDialog *parameterDialog
 }
 
 type promQLState struct {
 	chart graphState
 	assist
 	opt                                   Options
-	editor                                textarea.Model
+	editor                                editor.Buffer
 	table                                 ui.Table
 	resultFilter                          resultFilterState
 	entries                               []history.Entry
@@ -86,7 +88,7 @@ func New(o Options, entries []history.Entry) *Model {
 	e.CharLimit = 65536
 	e.MaxWidth = 0
 	m := &Model{alerts: newAlertsState(o.Connection.Alerts), targets: newTargetsState(o.Connection), silences: newSilencesState(), routing: newRoutingState(), rules: newRulesState(o.Connection), promQLState: promQLState{
-		opt: o, entries: entries, cursor: -1, editor: e, resultFilter: newResultFilter(), status: "Ready", summary: "No query executed",
+		opt: o, entries: entries, cursor: -1, editor: editor.Buffer{Model: e}, resultFilter: newResultFilter(), status: "Ready", summary: "No query executed",
 	}}
 	m.resize(80, 24)
 	return m
@@ -99,6 +101,9 @@ func (m *Model) resize(w, h int) {
 	m.targets.input.SetWidth(max(1, w-13))
 	m.resultFilter.input.SetWidth(max(1, w-13))
 	m.sizeSavedInput()
+	m.savedTemplate.resize(w, h)
+	m.parameterDialog.resize(w)
+	m.sizeAlertSavedInputs()
 	m.sizeSilenceInputs()
 	m.sizeRoutingInput()
 	m.sizeRulesInput()
@@ -211,12 +216,12 @@ func (m *Model) recall(delta int) {
 		return
 	}
 	if i == -1 {
-		m.editor.SetValue(m.draft)
+		m.editor.SetExactValue(m.draft)
 	} else {
 		if m.cursor == -1 {
 			m.draft = m.editor.Value()
 		}
-		m.editor.SetValue(m.entries[i].Query)
+		m.editor.SetExactValue(m.entries[i].Query)
 	}
 	m.cursor = i
 }
@@ -279,6 +284,27 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onAlertsCompleted(v, time.Now())
 	case alertsTick:
 		return m, m.onAlertsTick(time.Time(v))
+	case templateClipboard:
+		if m.quitting || m.parameterDialog != nil {
+			return m, nil
+		}
+		if m.activeTab == alertsTab && m.alerts.saved.mode == alertSavedTemplate && m.alerts.saved.template == v.editor {
+			if v.err != nil {
+				m.alerts.saved.err = fmt.Errorf("clipboard: %w", v.err)
+				return m, nil
+			}
+			return m, m.alertSavedInput(tea.PasteMsg{Content: v.value})
+		}
+		if m.activeTab == promQLTab && m.panel == savedTemplateKeys && m.savedTemplate.editor == v.editor {
+			if v.err != nil {
+				m.savedTemplate.err = fmt.Errorf("clipboard: %w", v.err)
+				return m, nil
+			}
+			return m, m.editTemplate(tea.PasteMsg{Content: v.value})
+		}
+		return m, nil
+	case alertClipboard:
+		return m, m.applyAlertClipboard(v)
 	case alertLabelsCopied:
 		m.alerts.detailStatus = "Copied labels"
 		if v.err != nil {
@@ -359,9 +385,24 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "Copied"
 		}
+	case parameterClipboard:
+		if d := m.parameterDialog; d != nil && d == v.dialog && d.row == v.row {
+			if v.err != nil {
+				d.err = fmt.Errorf("clipboard: %w", v.err)
+				return m, nil
+			}
+			return m, d.edit(tea.PasteMsg{Content: v.content})
+		}
+		return m, nil
 	case tea.PasteMsg:
 		if m.pickingConnection {
 			return m, nil
+		}
+		if m.parameterDialog != nil {
+			return m, m.parameterDialog.edit(v)
+		}
+		if m.activeTab == alertsTab && m.alerts.saved.mode != alertSavedClosed {
+			return m, m.alertSavedInput(v)
 		}
 		if !m.quitting && (m.activeTab == silencesTab || m.silences.editor != nil) {
 			return m, m.editSilenceInput(v)
@@ -380,6 +421,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.quitting || m.activeTab != promQLTab {
 			return m, nil
+		} else if m.panel == savedTemplateKeys {
+			return m, m.editTemplate(v)
 		} else if m.panel&savedQueryKeys != 0 {
 			return m, m.editSavedInput(v)
 		} else if m.resultFilter.input.Focused() {
@@ -393,6 +436,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if m.quitting {
 			return m, nil
+		}
+		if m.parameterDialog != nil {
+			return m, m.parameterKey(v)
 		}
 		if cmd, handled := m.shellKey(v); handled {
 			return m, cmd
@@ -609,6 +655,10 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	}
 	if !m.pickingConnection && m.panel&savedQueryKeys != 0 {
 		dialog, cursor := m.savedQueryLayer()
+		return lipgloss.NewCompositor(lipgloss.NewLayer(base), dialog).Render(), cursor
+	}
+	if !m.pickingConnection && m.panel == savedTemplateKeys {
+		dialog, cursor := m.savedTemplateLayer()
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), dialog).Render(), cursor
 	}
 	if !m.pickingConnection && m.panel&dialogKeys != 0 {

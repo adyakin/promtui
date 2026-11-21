@@ -20,6 +20,9 @@ import (
 
 func (m *Model) alertsFooter() string {
 	a := &m.alerts
+	if a.saved.mode != alertSavedClosed {
+		return m.alertSavedFooter()
+	}
 	var hints []string
 	back := ""
 	switch {
@@ -43,6 +46,10 @@ func (m *Model) alertsFooter() string {
 			hints = append(hints, m.connectionHint())
 		}
 	default:
+		hints = append(hints, "m Matchers", "Ctrl+O Saved")
+		if a.structured.match != nil {
+			hints = append(hints, "x Clear", "Ctrl+S Save")
+		}
 		if len(m.opt.Connections) > 0 {
 			hints = append(hints, m.connectionHint())
 		}
@@ -196,7 +203,11 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	if a.err == nil && len(a.visible) > 0 {
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
 	}
-	base := strings.Join([]string{m.header(alertsTab), frame("Alerts", meta, body, m.width, true),
+	heading := "Alerts"
+	if filter := a.structured.description(); filter != "" {
+		heading += " | " + ui.Plain(filter)
+	}
+	base := strings.Join([]string{m.header(alertsTab), frame(heading, meta, body, m.width, a.saved.mode == alertSavedClosed),
 		lipgloss.NewStyle().Width(m.width).Render(ansi.Truncate(" "+status, m.width, "…")), m.footer()}, "\n")
 	if (a.help || a.dialog != alertNoDialog) && m.silences.editor == nil {
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.alertDialogLayer(now)).Render(), nil
@@ -323,6 +334,8 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 		default:
 			lines = []string{"↑ / ↓: select an alert", "PgUp / PgDn: move one page", "Home / End: first / last alert",
 				"Enter: open details", "/: fuzzy-filter alerts (Enter applies, Esc cancels)",
+				"m: edit label matchers · x: clear label matchers",
+				"Ctrl+O: browse saved filters · Ctrl+S: save active matchers",
 				"s: cycle sort modes", "r: refresh now (auto-refresh every 30s)",
 				"Alt+S: show request status", "0–5 or Alt+0–5: switch tabs", "q: quit"}
 			if a.err != nil {

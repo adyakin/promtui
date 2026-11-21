@@ -49,8 +49,10 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 
 		m.alerts.stop()
 		requestID, tickQueued := m.alerts.requestID, m.alerts.tickQueued
+		structured := m.alerts.structured
 		m.alerts = newAlertsState(next.Alerts)
 		m.alerts.requestID, m.alerts.tickQueued = requestID, tickQueued
+		m.alerts.structured = structured
 		m.alerts.input.SetWidth(max(1, m.width-13))
 
 		m.silences.stop()

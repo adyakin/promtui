@@ -12,7 +12,7 @@ import (
 	"promtui/internal/ui"
 )
 
-type keyScope uint16
+type keyScope uint32
 
 const (
 	editKeys keyScope = 1 << iota
@@ -31,11 +31,12 @@ const (
 	savedNameKeys
 	savedConfirmKeys
 	queryErrorKeys
+	savedTemplateKeys
 	savedQueryKeys = savedBrowserKeys | savedSearchKeys | savedNameKeys | savedConfirmKeys
 	resultKeys     = tableKeys | graphKeys
 	mainKeys       = editKeys | resultKeys
 	scrollKeys     = helpKeys | detailKeys | labelKeys | queryErrorKeys
-	allKeys        = mainKeys | completionKeys | historyKeys | scrollKeys | rangeKeys | seriesKeys | filterKeys | savedQueryKeys
+	allKeys        = mainKeys | completionKeys | historyKeys | scrollKeys | rangeKeys | seriesKeys | filterKeys | savedQueryKeys | savedTemplateKeys
 )
 
 type binding struct {
@@ -85,9 +86,11 @@ var bindings = []binding{
 	{"savedSearch", "/", "/", "/ Search", savedBrowserKeys},
 	{"savedRename", "e", "e", "e Rename", savedBrowserKeys},
 	{"savedUpdate", "u", "u", "u Update", savedBrowserKeys},
+	{"savedEditTemplate", "t", "t", "t Template", savedBrowserKeys},
 	{"savedDelete", "d", "d", "d Delete", savedBrowserKeys},
 	{"savedSearchDone", "enter", "Enter", "Enter Done", savedSearchKeys},
 	{"savedApply", "enter", "Enter", "Enter Confirm", savedNameKeys | savedConfirmKeys},
+	{"savedTemplateApply", "ctrl+enter ctrl+g", "Ctrl+Enter", "Ctrl+Enter Save", savedTemplateKeys},
 	{"cancelOrQuit", "ctrl+c", "Ctrl+C", "Ctrl+C Quit", allKeys},
 	{"back", "esc", "Esc", "Esc Back", allKeys &^ resultKeys},
 	{"help", "?", "?", "? Help", resultKeys | helpKeys | detailKeys},
@@ -134,6 +137,8 @@ func (m *Model) available(b binding, scope keyScope) bool {
 	switch b.id {
 	case "queryError", "copyQueryError":
 		return m.queryPhase == queryFailed
+	case "savedEditTemplate":
+		return m.savedQueries.selectedIndex() >= 0
 	case "graph":
 		return m.opt.Graphics
 	case "series":
@@ -190,7 +195,7 @@ func (m *Model) promQLFooter() string {
 	var hints []string
 	reserved := ""
 	gap := "   "
-	if scope&savedQueryKeys != 0 {
+	if scope&savedQueryKeys != 0 || scope == savedTemplateKeys {
 		gap = "  "
 	}
 	if scope == queryErrorKeys {
@@ -234,7 +239,10 @@ func (m *Model) promQLFooter() string {
 		if b.id == "scroll" && scope == queryErrorKeys && m.width < 27 {
 			hint = "↑↓"
 		}
-		if b.id == "back" && scope&savedQueryKeys != 0 {
+		if b.id == "savedTemplateApply" && m.width < 30 {
+			hint = "^Enter OK"
+		}
+		if b.id == "back" && (scope&savedQueryKeys != 0 || scope == savedTemplateKeys) {
 			hint = "Esc Cancel"
 			if scope == savedBrowserKeys {
 				hint = "Esc Close"
@@ -318,6 +326,8 @@ func (m *Model) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch scope {
 	case savedNameKeys, savedSearchKeys:
 		return m.editSavedInput(k), true
+	case savedTemplateKeys:
+		return m.editTemplate(k), true
 	case historyKeys, filterKeys:
 		if m.resultFilter.input.Focused() {
 			return m.editResultFilter(k), true
@@ -372,6 +382,8 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		switch scope {
 		case savedBrowserKeys, savedSearchKeys, savedNameKeys, savedConfirmKeys:
 			m.backSavedQueries()
+		case savedTemplateKeys:
+			m.backSavedTemplate()
 		case editKeys, completionKeys:
 			m.dismiss()
 			m.editor.Blur()
@@ -548,11 +560,22 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	case "savedRename":
 		return m.openSavedAction(renameSaved)
 	case "savedUpdate":
+		q := &m.savedQueries
+		if idx := q.selectedIndex(); idx >= 0 && q.queries[idx].Parameters != nil {
+			return m.openSavedTemplateEditor(idx) // Explicit template editing for parameterized items.
+		}
 		return m.openSavedAction(updateSaved)
+	case "savedEditTemplate":
+		if q := &m.savedQueries; q.selectedIndex() >= 0 {
+			return m.openSavedTemplateEditor(q.selectedIndex())
+		}
+		return nil
 	case "savedDelete":
 		return m.openSavedAction(deleteSaved)
 	case "savedApply":
 		return m.applySavedAction()
+	case "savedTemplateApply":
+		return m.applySavedTemplate()
 	case "complete":
 		return m.schedule(true)
 	case "recall":
@@ -564,7 +587,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		m.dismiss()
 		m.diagnostic = editor.Diagnostic(m.editor.Value())
 	case "restore":
-		m.editor.SetValue(m.options[m.selected])
+		m.editor.SetExactValue(m.options[m.selected])
 		m.cursor = -1
 		return m.schedule(false)
 	case "selectAssist":
