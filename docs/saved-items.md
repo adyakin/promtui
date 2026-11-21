@@ -46,29 +46,8 @@ remove `parameters`. A plain query (no `parameters` field) does not interpret
 any dollar signs, preserving older collections. Use `parameters: []` to
 enable template escaping without a prompt.
 
-Example `queries.yaml`:
-
-```yaml
-queries:
-  - name: All CPU metrics
-    expression: node_cpu_seconds_total
-
-  - name: Idle CPU by instance
-    parameters:
-      - name: instance
-        default: server01:9100
-    expression: |
-      rate(node_cpu_seconds_total{
-        instance="${instance}",
-        mode="idle"
-      }[5m])
-
-  - name: Request rate by service
-    parameters:
-      - name: service
-    expression: |
-      sum(rate(http_requests_total{servicename="${service}"}[5m]))
-```
+For file-based setup, see the [README](../README.md#promql-queriesyaml) and
+[`examples/queries.yaml`](../examples/queries.yaml).
 
 ## Saved Alerts
 
@@ -100,28 +79,8 @@ order, or connection. The file stores only label matchers and parameter
 definitions, not UI state. No Alertmanager silence or other server-side state
 is created.
 
-Example `alerts.yaml`:
-
-```yaml
-alerts:
-  - name: All HAProxy alerts
-    matchers:
-      - label: alertname
-        operator: "=~"
-        value: ".*HAProxy.*"
-
-  - name: HAProxy by service
-    parameters:
-      - name: service
-        default: okd4-prod
-    matchers:
-      - label: alertname
-        operator: "=~"
-        value: ".*HAProxy.*"
-      - label: servicename
-        operator: "="
-        value: "${service}"
-```
+For file-based setup, see the [README](../README.md#alerts-alertsyaml) and
+[`examples/alerts.yaml`](../examples/alerts.yaml).
 
 ## Managing YAML externally
 

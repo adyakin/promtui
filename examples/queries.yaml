@@ -1,0 +1,14 @@
+queries:
+  - name: All scrape targets
+    expression: up
+
+  - name: Scrape targets by job
+    parameters:
+      - name: job
+    expression: 'up{job="${job}"}'
+
+  - name: Failed scrapes
+    expression: up == 0
+
+  - name: Healthy targets per job
+    expression: sum by (job) (up)

@@ -1,0 +1,23 @@
+alerts:
+  - name: All named alerts
+    matchers:
+      - label: alertname
+        operator: "=~"
+        value: ".+"
+
+  - name: Alerts by severity
+    parameters:
+      - name: severity
+        default: warning
+    matchers:
+      - label: severity
+        operator: "="
+        value: "${severity}"
+
+  - name: Alerts by name
+    parameters:
+      - name: alertname
+    matchers:
+      - label: alertname
+        operator: "="
+        value: "${alertname}"

@@ -20,8 +20,7 @@ archives:
     files:
       - LICENSE.txt
       - README.md
-      - config.example.yaml
-      - config.example.toml
+      - examples/*
 
 checksum:
   name_template: checksums.txt

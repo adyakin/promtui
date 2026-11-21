@@ -8,9 +8,9 @@ PromTUI uses the built-in defaults.
 
 An explicit `-config PATH` loads only that file, choosing the parser by
 extension. Existing TOML configs need no conversion. To switch to YAML, copy
-[`config.example.yaml`](../config.example.yaml) and turn each TOML
+[`config.example.yaml`](../examples/config.example.yaml) and turn each TOML
 `[[connections]]` entry into a YAML key under `connections`, using its `name`
-as the key. A [TOML example](../config.example.toml) is also available.
+as the key. A [TOML example](../examples/config.example.toml) is also available.
 PromTUI never rewrites either file.
 
 | Setting | Default |

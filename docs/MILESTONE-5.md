@@ -25,7 +25,7 @@ PromTUI appends `/api/v2/alerts` to the base URL, preserving reverse-proxy prefi
 ## Source files
 
 - `internal/alertmanager/client.go`: wire format, request, and error handling.
-- `internal/config/config.go`, `config.example.toml`: connection configuration.
+- `internal/config/config.go`, `examples/config.example.toml`: connection configuration.
 - `internal/app/alerts.go`, `alert_rows.go`, `alerts_view.go`: refresh, alert presentation, keyboard handling, table and overlays.
 - `internal/app/shell.go`, `model.go`: tab routing and application integration.
 
