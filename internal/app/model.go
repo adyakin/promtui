@@ -47,13 +47,14 @@ type copied struct{ err error }
 type Model struct {
 	shellState
 	promQLState
-	alerts        alertsState
-	silences      silencesState
-	targets       targetsState
-	routing       routingState
-	rules         rulesState
-	httpClients   map[bool]*http.Client
-	programStatus terminalStatus
+	alerts          alertsState
+	silences        silencesState
+	targets         targetsState
+	routing         routingState
+	rules           rulesState
+	httpClients     map[bool]*http.Client
+	programStatus   terminalStatus
+	parameterDialog *parameterDialog
 }
 
 type promQLState struct {
@@ -99,6 +100,7 @@ func (m *Model) resize(w, h int) {
 	m.targets.input.SetWidth(max(1, w-13))
 	m.resultFilter.input.SetWidth(max(1, w-13))
 	m.sizeSavedInput()
+	m.parameterDialog.resize(w)
 	m.sizeSilenceInputs()
 	m.sizeRoutingInput()
 	m.sizeRulesInput()
@@ -363,6 +365,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pickingConnection {
 			return m, nil
 		}
+		if m.parameterDialog != nil {
+			return m, m.parameterDialog.edit(v)
+		}
 		if !m.quitting && (m.activeTab == silencesTab || m.silences.editor != nil) {
 			return m, m.editSilenceInput(v)
 		}
@@ -393,6 +398,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if m.quitting {
 			return m, nil
+		}
+		if m.parameterDialog != nil {
+			return m, m.parameterKey(v)
 		}
 		if cmd, handled := m.shellKey(v); handled {
 			return m, cmd

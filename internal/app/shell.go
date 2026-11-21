@@ -182,6 +182,13 @@ func (m *Model) textInputFocused() bool {
 }
 
 func (m *Model) footer() string {
+	if m.parameterDialog != nil {
+		hints := []string{"Ctrl+Enter Apply", "Tab Next", "Ctrl+Space Empty"}
+		if m.width < 30 {
+			hints[0] = "^Enter OK"
+		}
+		return m.formatFooter(hints, "Esc Cancel", "  ")
+	}
 	if m.pickingConnection {
 		return m.formatFooter([]string{"↑↓ Select", "Enter Switch"}, "Esc Back", "   ")
 	}
@@ -278,6 +285,15 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 		}
 		return strings.Join(lines, "\n"), nil
 	}
+	screen, cursor := m.renderWorkspace()
+	if m.parameterDialog != nil {
+		layer, cursor := m.parameterLayer()
+		return lipgloss.NewCompositor(lipgloss.NewLayer(screen), layer).Render(), cursor
+	}
+	return screen, cursor
+}
+
+func (m *Model) renderWorkspace() (string, *tea.Cursor) {
 	// A queued upload cannot be interrupted. Keep the old workspace visible
 	// until Bubble Tea has queued the delete, so images never cover another tab.
 	if m.activeTab == promQLTab || m.chart.displayed.cols != 0 || m.chart.sending {

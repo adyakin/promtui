@@ -6,12 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+	"promtui/internal/saveditems"
 )
 
 type Query struct {
@@ -68,28 +67,14 @@ type collection struct {
 	Queries []Query `yaml:"queries"`
 }
 
-var ErrChanged = errors.New("file changed on disk; close and reopen Saved Queries")
-
-func read(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, &os.PathError{Op: "read", Path: path, Err: errors.New("expected a regular file")}
-	}
-	return os.ReadFile(path)
-}
+var ErrChanged = saveditems.ErrChanged
 
 func Open(path string) (Snapshot, error) {
 	s := Snapshot{path: path}
 	if path == "" {
 		return s, errors.New("saved queries path is not configured")
 	}
-	raw, err := read(path)
+	raw, err := saveditems.Read(path)
 	if err != nil {
 		return s, fmt.Errorf("read saved queries: %w", err)
 	}
@@ -135,16 +120,7 @@ func CheckExpression(expression string) error {
 }
 
 func checkedName(queries []Query, name string, except int) (string, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", errors.New("enter a name")
-	}
-	for i, q := range queries {
-		if i != except && strings.EqualFold(q.Name, name) {
-			return "", fmt.Errorf("a query named %q already exists", q.Name)
-		}
-	}
-	return name, nil
+	return saveditems.CheckName(name, len(queries), except, func(i int) string { return queries[i].Name }, "query")
 }
 
 func (s Snapshot) Add(name, expression string) (Snapshot, error) {
@@ -190,23 +166,12 @@ func (s Snapshot) Delete(index int) (Snapshot, error) {
 	return s.commit(slices.Delete(s.Queries(), index, index+1))
 }
 
-func (s Snapshot) checkVersion() error {
-	current, err := read(s.path)
-	if err != nil {
-		return err
-	}
-	if (current == nil) != (s.version == nil) || !bytes.Equal(current, s.version) {
-		return ErrChanged
-	}
-	return nil
-}
-
 func (s Snapshot) commit(next []Query) (Snapshot, error) {
 	fail := func(err error) (Snapshot, error) {
 		return s, fmt.Errorf("write saved queries %s: %w", s.path, err)
 	}
 	if slices.Equal(s.queries, next) {
-		if err := s.checkVersion(); err != nil {
+		if err := saveditems.CheckVersion(s.path, s.version); err != nil {
 			return fail(err)
 		}
 		return s, nil
@@ -215,30 +180,7 @@ func (s Snapshot) commit(next []Query) (Snapshot, error) {
 	if err != nil {
 		return fail(err)
 	}
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fail(err)
-	}
-	f, err := os.CreateTemp(dir, ".queries-*") // same filesystem, mode 0600
-	if err != nil {
-		return fail(err)
-	}
-	defer os.Remove(f.Name())
-	_, err = f.Write(raw)
-	if err == nil {
-		err = f.Sync()
-	}
-	closeErr := f.Close()
-	if err != nil {
-		return fail(err)
-	}
-	if closeErr != nil {
-		return fail(closeErr)
-	}
-	if err := s.checkVersion(); err != nil {
-		return fail(err)
-	}
-	if err := os.Rename(f.Name(), s.path); err != nil {
+	if err := saveditems.Write(s.path, s.version, raw); err != nil {
 		return fail(err)
 	}
 	s.version, s.queries = raw, next
