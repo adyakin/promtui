@@ -30,9 +30,9 @@ func TestStartupShortcutsAndEditing(t *testing.T) {
 		t.Fatal("c did not open Connections at startup")
 	}
 	press(m, tea.KeyEsc)
-	for i, code := range "120" {
+	for i, code := range "1230" {
 		press(m, code)
-		if m.activeTab != []tabID{alertsTab, targetsTab, promQLTab}[i] || m.editor.Value() != "" {
+		if m.activeTab != []tabID{alertsTab, silencesTab, targetsTab, promQLTab}[i] || m.editor.Value() != "" {
 			t.Fatal("bare digit did not switch tabs before editing")
 		}
 	}
@@ -127,16 +127,18 @@ func TestShellLayoutAndFooterOnResize(t *testing.T) {
 			}
 		}
 	}
-	check([2]int{100, 24}, "q1q1", "0 PromQL", "1 Alerts", "2 Targets", "Range · Last 1h", runHint)
+	check([2]int{100, 24}, "q1q1", "0 PromQL", "1 Alerts", "2 Silences", "3 Targets", "Range · Last 1h", runHint)
 	pressAlt(m, '1')
-	check([2]int{100, 24}, "╭─ › Alerts", "PromTUI q1q1", "Set alertmanager_url", "0–2 Tabs", "q Quit")
+	check([2]int{100, 24}, "╭─ › Alerts", "PromTUI q1q1", "Set alertmanager_url", "0–3 Tabs", "q Quit")
 	if !strings.Contains(m.screen(), activeTabStyle.Render(" 1 Alerts ")) ||
 		strings.Contains(m.footer(), "Run") || strings.Contains(m.footer(), "History") {
 		t.Fatal("Alerts is not highlighted or displays PromQL actions")
 	}
 	press(m, '2')
-	check([2]int{24, 10}, "╭─ › Targets", "Missing target", "0–2 Tabs")
-	check([2]int{19, 6}, "Enlarge terminal", "0–2 Tabs")
+	check([2]int{24, 10}, "╭─ › Silences", "Set alertmanager_url", "0–3 Tabs")
+	pressAlt(m, '3')
+	check([2]int{24, 10}, "╭─ › Targets", "Missing target", "0–3 Tabs")
+	check([2]int{19, 6}, "Enlarge terminal", "0–3 Tabs")
 	press(m, '0')
 	press(m, 'i')
 	check([2]int{70, 18}, "╭─ › Query", "Tab Results")
@@ -156,7 +158,7 @@ func TestTabSwitchDoesNotRequeryOrChangeTableState(t *testing.T) {
 	m.Update(completed{result: result})
 	press(m, tea.KeyDown, tea.KeyEnter)
 	table, id := m.table, m.id
-	for _, code := range "120120" {
+	for _, code := range "12301230" {
 		if _, cmd := m.Update(tea.KeyPressMsg{Code: code, Text: string(code)}); cmd != nil {
 			t.Fatalf("switching with %c scheduled work", code)
 		}
@@ -169,7 +171,7 @@ func TestTabSwitchDoesNotRequeryOrChangeTableState(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	m.cancel = cancel
-	press(m, '2')
+	press(m, '3')
 	if _, cmd := m.Update(completed{id: id, result: result}); ctx.Err() != nil || cmd != nil || m.activeTab != targetsTab {
 		t.Fatal("switching cancelled or restarted the in-flight query")
 	}
@@ -187,7 +189,7 @@ func TestShellClearsAndRestoresKittyPlacement(t *testing.T) {
 	_, upload := m.Update(render())
 
 	// Switch away with an upload already queued, then pick another tab.
-	press(m, '1', '2')
+	press(m, '1', '2', '3')
 	_, clear := m.Update(upload())
 	if clear == nil || !strings.Contains(string(clear().(tea.RawMsg).Msg.(graphPacket)), "a=d") ||
 		strings.Contains(m.screen(), "Missing target configuration") {

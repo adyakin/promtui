@@ -311,7 +311,7 @@ func TestGraphSeriesAndTableActions(t *testing.T) {
 	m := New(Options{Graphics: true}, nil)
 	m.Update(completed{result: sampleResult(true)})
 	press(m, tea.KeyDown)
-	if s := ansi.Strip(m.footer()); !strings.Contains(s, "i Edit   0–2 Tabs   g Graph   t Table   s Series   r Range   q Quit") {
+	if s := ansi.Strip(m.footer()); !strings.Contains(s, "i Edit   0–3 Tabs   g Graph   t Table   s Series   r Range   q Quit") {
 		t.Fatal(s)
 	}
 	if !strings.Contains(m.legend(), "› 2/2") {
@@ -390,7 +390,7 @@ func TestFooterAvailability(t *testing.T) {
 	m := New(Options{}, nil)
 	m.resize(110, 24)
 	foot := func() string { return ansi.Strip(m.footer()) }
-	if s := foot(); !strings.Contains(s, "i Edit   0–2 Tabs   t Table   r Range   q Quit") || strings.Contains(s, "Copy") || strings.Contains(s, "Graph") {
+	if s := foot(); !strings.Contains(s, "i Edit   0–3 Tabs   t Table   r Range   q Quit") || strings.Contains(s, "Copy") || strings.Contains(s, "Graph") {
 		t.Fatal(s)
 	}
 	press(m, 'i')

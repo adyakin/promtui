@@ -21,13 +21,15 @@ PromTUI never rewrites either file.
 | `query.default_range` | `1h` |
 | `query.max_series` | `500` |
 | `terminal.program_status` | `true`; reports explicit PromQL query status to the terminal via OSC 7501 |
+| `silence_creator` | Empty; optional editable default for the Created by field in new silence drafts |
 | `connections` | One connection, `local`, at `http://localhost:9090` |
 | `insecure_skip_verify` | `false` |
 
 Durations use Go syntax (for example, `168h` for seven days). Every connection
 requires a Prometheus or VictoriaMetrics `url` and can have an optional
-`alertmanager_url`. Both are HTTP(S) base URLs without credentials, query
-strings, or fragments. Path prefixes are supported.
+`alertmanager_url` for Alerts and [Silences](silences.md). Both are HTTP(S)
+base URLs without credentials, query strings, or fragments. Path prefixes
+are supported.
 
 Set `terminal.program_status` to `false` to suppress OSC 7501 reports. The
 setting does not change the in-app status or error messages.

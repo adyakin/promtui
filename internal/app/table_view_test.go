@@ -104,7 +104,7 @@ func TestCustomTargetView(t *testing.T) {
 		}}
 	m := New(Options{Connection: conn}, nil)
 	m.resize(96, 14)
-	press(m, '2')
+	press(m, '3')
 	defer m.targets.stop(nil)
 	target := func(health, service, hidden, timestamp string) api.Target {
 		return api.Target{
@@ -208,7 +208,7 @@ func TestTableViewsResetOnConnectionSwitch(t *testing.T) {
 	press(m, '1')
 	populateAlerts()
 	checkViewHeader(t, m.screen(), "TEAM")
-	press(m, '2')
+	press(m, '3')
 	populateTargets()
 	checkViewHeader(t, m.screen(), "TEAM")
 	press(m, '/', 'p', 'l', 't', tea.KeyEnter)

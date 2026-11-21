@@ -135,7 +135,7 @@ func (m *Model) canCopyLabels() bool {
 
 func (m *Model) helpBody() []string {
 	scope := m.mainScope()
-	lines := []string{"Alt+0 / Alt+1 / Alt+2  ·  Switch app tabs (0 / 1 / 2 outside text inputs)"}
+	lines := []string{"Alt+0–3  ·  Switch app tabs (0–3 outside text inputs)"}
 	if len(m.opt.Connections) > 0 {
 		lines = append(lines, "c / Alt+C  ·  Switch connection (Alt+C while typing)")
 	}

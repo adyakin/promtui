@@ -92,7 +92,7 @@ func TestConnectionPickerIsSharedAcrossTabs(t *testing.T) {
 	if len(m.table.Rows) != 0 || m.summary != "No query executed" {
 		t.Fatal("old results survived the switch")
 	}
-	press(m, '2', 'c')
+	press(m, '3', 'c')
 	if s := ansi.Strip(m.screen()); !strings.Contains(s, "Connections") || !strings.Contains(s, "› next (current)") {
 		t.Fatal(s)
 	}

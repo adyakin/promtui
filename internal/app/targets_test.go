@@ -119,7 +119,7 @@ func TestTargetsBoundedQueueAndCancellation(t *testing.T) {
 	if m.onTargetsTick(time.Now()) != nil {
 		t.Fatal("inactive tab refreshed")
 	}
-	press(m, '2')
+	press(m, '3')
 	if a.cancel == nil || a.requestID == id {
 		t.Fatal("returning to an interrupted refresh did not restart it")
 	}
@@ -131,7 +131,7 @@ func TestTargetsUI(t *testing.T) {
 	}))
 	defer s.Close()
 	m := New(Options{Connection: config.Connection{URL: s.URL}, Timeout: time.Second}, nil)
-	_, cmd := m.Update(tea.KeyPressMsg{Code: '2', Text: "2"})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	msg := cmd().(targetsCompleted)
 	if msg.err != nil {
 		t.Fatal(msg.err)
@@ -173,7 +173,7 @@ func TestTargetsUI(t *testing.T) {
 	if len(a.visible) != 0 || !strings.Contains(m.screen(), "No targets matching the current filter") {
 		t.Fatal(m.screen())
 	}
-	press(m, '0', '2', '/')
+	press(m, '0', '3', '/')
 	if a.source != 1 || a.filter != "env=prod" || a.sort != sortTargetDuration || targetHealthOrder[a.health] != targetUp {
 		t.Fatal("tab switch lost the filter, source, health or sort")
 	}

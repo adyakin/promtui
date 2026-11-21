@@ -9,6 +9,7 @@ A keyboard-driven terminal UI for **Prometheus** and **VictoriaMetrics**. Run Pr
 - Multiline PromQL editor with syntax highlighting, completion, history, and saved queries
 - Instant-query tables and range-query graphs with series filtering
 - Alertmanager alert browser with filtering and sorting
+- Alertmanager silence management with matcher previews
 - Prometheus and vmagent scrape-target inspection
 - Multiple backend connections with fast switching
 
@@ -31,9 +32,11 @@ cp config.example.yaml config.yaml
 
 Run `promtui --version` (or `promtui version`) to check which binary you're running, without loading configuration. Use `./bin/promtui --version` to check a local build directly. Release binaries show their release tag; builds between tags identify the commit and indicate whether the working tree had uncommitted changes.
 
-Press **i** to edit a query and **Ctrl+Enter** or **Ctrl+G** to run it. Use **g** for Graph, **t** for Table, **0–2** to switch tabs, and **c** to change connections. Press **?** for help outside text inputs and **Alt+S** (Option+S on macOS with Option configured as Alt) for request status. PromTUI does not bind function keys. Graphs require a terminal with Kitty graphics support, such as Kitty or Rex.
+Press **i** to edit a query and **Ctrl+Enter** or **Ctrl+G** to run it. Use **g** for Graph, **t** for Table, **0–3** to switch tabs (**0 PromQL**, **1 Alerts**, **2 Silences**, **3 Targets**), and **c** to change connections. Use **Alt+0–3** while typing outside modal dialogs. Press **?** for help outside text inputs and **Alt+S** (Option+S on macOS with Option configured as Alt) for request status on PromQL, Alerts, or Targets. PromTUI does not bind function keys. Graphs require a terminal with Kitty graphics support, such as Kitty or Rex.
 
 To investigate an alert, open **1 Alerts**, select an alert, and press **Enter** to open its details. Press **p** to load the expression from its Prometheus generator link into the PromQL editor. This replaces the current draft without running the query or changing the connection, time range, or results. Review or edit it, then press **Ctrl+Enter** to run it. VictoriaMetrics/vmalert links are not supported.
+
+To silence an alert, press **s** in Alert Details, or open **2 Silences** and press **n** to start from scratch. See [Managing silences](docs/silences.md) for preview, scheduling, editing, and expiration.
 
 ## Example configuration
 

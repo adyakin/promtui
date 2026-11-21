@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -16,13 +17,15 @@ type tabID int
 const (
 	promQLTab tabID = iota
 	alertsTab
+	silencesTab
 	targetsTab
 )
 
 var tabs = [...]string{
-	promQLTab:  "PromQL",
-	alertsTab:  "Alerts",
-	targetsTab: "Targets",
+	promQLTab:   "PromQL",
+	alertsTab:   "Alerts",
+	silencesTab: "Silences",
+	targetsTab:  "Targets",
 }
 
 type shellState struct {
@@ -34,6 +37,16 @@ type shellState struct {
 }
 
 func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
+	if m.silences.modal() && !m.pickingConnection {
+		k := key.String()
+		if key.Mod&tea.ModAlt != 0 {
+			k = key.Keystroke()
+		}
+		if k == "ctrl+q" && m.silences.writeCancel == nil {
+			return m.act("quit", "", 0), true
+		}
+		return m.silenceModalKey(k, key, time.Now()), true
+	}
 	if m.activeTab == promQLTab && m.panel&(savedQueryKeys|queryErrorKeys) != 0 {
 		return nil, false // Modal dialogs own tab and connection shortcuts.
 	}
@@ -62,6 +75,10 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 				if next == alertsTab {
 					return m.alertsOnEntry(time.Now()), true
 				}
+				if next == silencesTab {
+					m.alerts.silenceNotice = ""
+					return m.onSilencesEntry(time.Now()), true
+				}
 				if next == targetsTab {
 					return m.targetsOnEntry(time.Now()), true
 				}
@@ -71,6 +88,12 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 	switch key.String() {
 	case "ctrl+c":
+		if m.activeTab == silencesTab && m.silences.listCancel != nil {
+			s := &m.silences
+			cancelSilenceRequest(&s.listCancel)
+			s.lastDone, s.listErr = time.Now(), context.Canceled
+			return m.scheduleSilencesTick(s.lastDone), true
+		}
 		if m.activeTab == targetsTab && m.targets.cancel != nil {
 			m.targets.stop(errTargetsCancelled)
 			m.targets.lastDone = time.Now()
@@ -89,6 +112,9 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	if m.activeTab == alertsTab {
 		return m.alertsKey(key), true
 	}
+	if m.activeTab == silencesTab {
+		return m.silencesKey(key), true
+	}
 	if m.activeTab == targetsTab {
 		return m.targetsKey(key), true
 	}
@@ -96,6 +122,9 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 }
 
 func (m *Model) textInputFocused() bool {
+	if m.activeTab == silencesTab {
+		return m.silences.search.Focused()
+	}
 	if m.activeTab == alertsTab {
 		return m.alerts.input.Focused()
 	}
@@ -112,6 +141,9 @@ func (m *Model) textInputFocused() bool {
 func (m *Model) footer() string {
 	if m.pickingConnection {
 		return m.formatFooter([]string{"↑↓ Select", "Enter Switch"}, "Esc Back", "   ")
+	}
+	if m.activeTab == silencesTab || m.silences.editor != nil {
+		return m.silencesFooter()
 	}
 	if m.activeTab == promQLTab {
 		return m.promQLFooter()
@@ -132,12 +164,15 @@ func (m *Model) header(active tabID, statuses ...string) string {
 		for i, tab := range tabs {
 			label := fmt.Sprintf(" %d %s ", i, tab)
 			if compact {
-				label = fmt.Sprintf(" %d ", i)
+				label = fmt.Sprintf(" %d", i)
 			}
 			if tabID(i) == active {
 				label = activeTabStyle.Render(label)
 			}
 			s.WriteString(label)
+		}
+		if compact {
+			s.WriteByte(' ')
 		}
 		return s.String()
 	}
@@ -194,6 +229,11 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 	}
 	if m.activeTab == alertsTab {
 		screen, cursor := m.alertsScreen(time.Now())
+		screen, cursor = m.withSilenceDialog(screen, cursor, time.Now())
+		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
+	}
+	if m.activeTab == silencesTab {
+		screen, cursor := m.silencesScreen(time.Now())
 		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
 	}
 	screen, cursor := m.targetsScreen(time.Now())

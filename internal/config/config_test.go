@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+func TestSilenceCreatorSetting(t *testing.T) {
+	for _, tc := range []struct{ yaml, want string }{
+		{"", ""},
+		{"silence_creator: on-call\n", "on-call"},
+	} {
+		cfg, err := decode("config.yaml", []byte(tc.yaml))
+		if err != nil || cfg.SilenceCreator != tc.want {
+			t.Fatalf("silence_creator from %q: %q, %v", tc.yaml, cfg.SilenceCreator, err)
+		}
+	}
+}
+
 func TestProgramStatusConfig(t *testing.T) {
 	for _, tc := range []struct {
 		path, data string

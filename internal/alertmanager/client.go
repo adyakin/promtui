@@ -2,6 +2,7 @@
 package alertmanager
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -34,47 +35,90 @@ var ErrConfig = errors.New("set alertmanager_url to an HTTP(S) base URL without 
 var ErrAuth = errors.New("Alertmanager authentication or authorization failed")
 
 func (c Client) Alerts(ctx context.Context) ([]Alert, error) {
+	var alerts []Alert
+	err := c.request(ctx, http.MethodGet, "api/v2/alerts", "active=true&silenced=true&inhibited=true&unprocessed=true", nil, &alerts)
+	if err == nil && alerts == nil {
+		err = errors.New("invalid Alertmanager response: expected a JSON array of alerts")
+	}
+	return alerts, err
+}
+
+func (c Client) request(ctx context.Context, method, path, query string, data, result any) error {
 	base, err := url.Parse(c.Base)
 	if err != nil || base.Hostname() == "" || (base.Scheme != "http" && base.Scheme != "https") ||
 		base.User != nil || base.ForceQuery || base.RawQuery != "" || strings.Contains(c.Base, "#") {
-		return nil, ErrConfig
+		return ErrConfig
 	}
-	endpoint := base.JoinPath("api/v2/alerts")
-	endpoint.RawQuery = "active=true&silenced=true&inhibited=true&unprocessed=true"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	endpoint := base.JoinPath(path)
+	endpoint.RawQuery = query
+	var body io.Reader
+	if data != nil {
+		buf, err := json.Marshal(data)
+		if err != nil {
+			return fmt.Errorf("encode Alertmanager request: %w", err)
+		}
+		body = bytes.NewReader(buf)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), body)
 	if err != nil {
-		return nil, ErrConfig
+		return ErrConfig
 	}
 	req.Header.Set("Accept", "application/json")
+	if data != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	client := c.HTTP
 	if client == nil {
 		client = http.DefaultClient
 	}
+	if method != http.MethodGet {
+		// Do not silently retry or forward a write to a different endpoint.
+		direct := *client
+		direct.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client = &direct
+	}
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, requestError(ctx, err, "could not reach Alertmanager (check connectivity and TLS)")
+		return requestError(ctx, err, "could not reach Alertmanager (check connectivity and TLS)")
 	}
 	defer res.Body.Close()
 	switch {
 	case res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden:
-		return nil, fmt.Errorf("%w (HTTP %d)", ErrAuth, res.StatusCode)
+		return fmt.Errorf("%w (HTTP %d)", ErrAuth, res.StatusCode)
+	case res.StatusCode == http.StatusNotFound && strings.HasPrefix(path, "api/v2/silence/"):
+		return ErrSilenceNotFound
 	case res.StatusCode/100 != 2:
-		return nil, fmt.Errorf("Alertmanager returned HTTP %d", res.StatusCode)
+		if res.StatusCode == http.StatusNotFound && method == http.MethodPost {
+			return fmt.Errorf("Alertmanager returned HTTP 404 (silence no longer exists or endpoint unavailable)")
+		}
+		// Alertmanager's v2 silence handlers send JSON strings for validation errors.
+		// Never display arbitrary proxy HTML or unbounded response bodies.
+		if res.StatusCode == http.StatusBadRequest && strings.HasPrefix(path, "api/v2/silence") {
+			buf, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+			var reason string
+			if json.Unmarshal(buf, &reason) == nil && strings.TrimSpace(reason) != "" {
+				return fmt.Errorf("Alertmanager rejected the silence (HTTP 400): %q", reason)
+			}
+			return errors.New("Alertmanager rejected the silence (HTTP 400); check the matchers and timestamps")
+		}
+		return fmt.Errorf("Alertmanager returned HTTP %d", res.StatusCode)
+	}
+	if result == nil {
+		return nil
 	}
 
 	const maxBody = 32 << 20
 	buf, err := io.ReadAll(io.LimitReader(res.Body, maxBody+1))
 	if err != nil {
-		return nil, requestError(ctx, err, "could not read Alertmanager response")
+		return requestError(ctx, err, "could not read Alertmanager response")
 	}
 	if len(buf) > maxBody {
-		return nil, errors.New("Alertmanager response exceeds 32 MiB")
+		return errors.New("Alertmanager response exceeds 32 MiB")
 	}
-	var alerts []Alert
-	if err := json.Unmarshal(buf, &alerts); err != nil || alerts == nil {
-		return nil, errors.New("invalid Alertmanager response: expected a JSON array of alerts")
+	if err := json.Unmarshal(buf, result); err != nil {
+		return errors.New("invalid Alertmanager response: malformed JSON")
 	}
-	return alerts, nil
+	return nil
 }
 
 // Do not expose raw transport errors, response bodies or URLs in the UI.
