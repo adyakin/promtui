@@ -250,9 +250,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case alertsTick:
 		return m, m.onAlertsTick(time.Time(v))
 	case alertLabelsCopied:
-		m.alerts.copyStatus = "Copied labels"
+		m.alerts.detailStatus = "Copied labels"
 		if v.err != nil {
-			m.alerts.copyStatus = "Could not copy labels"
+			m.alerts.detailStatus = "Could not copy labels"
 		}
 		return m, nil
 	case uv.KittyGraphicsEvent:

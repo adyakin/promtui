@@ -33,6 +33,8 @@ Run `promtui --version` (or `promtui version`) to check which binary you're runn
 
 Press **i** to edit a query and **Ctrl+Enter** or **Ctrl+G** to run it. Use **g** for Graph, **t** for Table, **0–2** to switch tabs, and **c** to change connections. Press **?** for help outside text inputs and **Alt+S** (Option+S on macOS with Option configured as Alt) for request status. PromTUI does not bind function keys. Graphs require a terminal with Kitty graphics support, such as Kitty or Rex.
 
+To investigate an alert, open **1 Alerts**, select an alert, and press **Enter** to open its details. Press **p** to load the expression from its Prometheus generator link into the PromQL editor. This replaces the current draft without running the query or changing the connection, time range, or results. Review or edit it, then press **Ctrl+Enter** to run it. VictoriaMetrics/vmalert links are not supported.
+
 ## Example configuration
 
 ```yaml
