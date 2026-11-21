@@ -54,6 +54,12 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	if m.activeTab == promQLTab && m.panel&(savedQueryKeys|queryErrorKeys) != 0 {
 		return nil, false // Modal dialogs own tab and connection shortcuts.
 	}
+	if m.activeTab == alertsTab && m.alerts.saved.mode != alertSavedClosed {
+		if key.Keystroke() == "ctrl+q" {
+			return m.act("quit", "", 0), true
+		}
+		return m.alertSavedKey(key), true
+	}
 	if m.activeTab == routingTab && m.routing.dialog != routingNoDialog && !m.pickingConnection {
 		return m.routingModalKey(key.String()), true
 	}
@@ -305,6 +311,10 @@ func (m *Model) renderWorkspace() (string, *tea.Cursor) {
 	}
 	if m.activeTab == alertsTab {
 		screen, cursor := m.alertsScreen(time.Now())
+		if m.alerts.saved.mode != alertSavedClosed && !m.pickingConnection {
+			layer, caret := m.alertSavedLayer()
+			return lipgloss.NewCompositor(lipgloss.NewLayer(screen), layer).Render(), caret
+		}
 		screen, cursor = m.withSilenceDialog(screen, cursor, time.Now())
 		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
 	}

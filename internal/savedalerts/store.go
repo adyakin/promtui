@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 
 	"gopkg.in/yaml.v3"
@@ -134,6 +135,12 @@ func (s Snapshot) commit(next []Filter) (Snapshot, error) {
 	}
 	if s.path == "" {
 		return fail(errors.New("saved alerts path is not configured"))
+	}
+	if reflect.DeepEqual(s.filters, next) {
+		if err := saveditems.CheckVersion(s.path, s.version); err != nil {
+			return fail(err)
+		}
+		return s, nil
 	}
 	raw, err := yaml.Marshal(collection{next})
 	if err != nil {

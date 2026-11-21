@@ -34,6 +34,7 @@ type Options struct {
 	Limit, HistoryLimit   int
 	HistoryPath           string
 	SavedQueriesPath      string
+	SavedAlertsPath       string
 	SilenceCreator        string
 }
 type completed struct {
@@ -101,6 +102,7 @@ func (m *Model) resize(w, h int) {
 	m.resultFilter.input.SetWidth(max(1, w-13))
 	m.sizeSavedInput()
 	m.parameterDialog.resize(w)
+	m.sizeAlertSavedInputs()
 	m.sizeSilenceInputs()
 	m.sizeRoutingInput()
 	m.sizeRulesInput()
@@ -281,6 +283,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onAlertsCompleted(v, time.Now())
 	case alertsTick:
 		return m, m.onAlertsTick(time.Time(v))
+	case alertClipboard:
+		return m, m.applyAlertClipboard(v)
 	case alertLabelsCopied:
 		m.alerts.detailStatus = "Copied labels"
 		if v.err != nil {
@@ -376,6 +380,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.parameterDialog != nil {
 			return m, m.parameterDialog.edit(v)
+		}
+		if m.activeTab == alertsTab && m.alerts.saved.mode != alertSavedClosed {
+			return m, m.alertSavedInput(v)
 		}
 		if !m.quitting && (m.activeTab == silencesTab || m.silences.editor != nil) {
 			return m, m.editSilenceInput(v)

@@ -66,7 +66,20 @@ queries:
 
 **Ctrl+O** opens saved filters. Use **↑/↓** to select, **/** to search by name,
 **Enter** to load, **e** to rename, **u** to update, and **d** to delete after
-confirmation. **Ctrl+S** saves the current matcher set.
+confirmation. Press **m** to edit the active label matchers, **x** to clear them
+without clearing fuzzy search, or **Ctrl+S** to save the active values as a new
+literal filter.
+
+In the matcher editor, **Tab** and **Shift+Tab** move between fields; **↑/↓**
+change rows. On the operator field, use **←/→** to choose an operator.
+**Ctrl+N** adds a row and **Ctrl+D** removes the current row. **Ctrl+Enter**
+(or **Ctrl+G**) applies, and **Esc** cancels.
+
+In the browser, **t** edits a filter's `matchers` and `parameters` as YAML;
+**Ctrl+Enter** saves that template without changing the active filter. **u**
+opens the same template editor for parameterized filters, so runtime values
+cannot replace their templates by accident. For a non-parameterized filter,
+**u** instead asks before replacing it with the active matchers.
 
 Use `=`, `!=`, `=~`, or `!~` for equality, inequality, regex, or negative regex.
 Regexes match the entire label value; absent labels are treated as empty
@@ -74,8 +87,10 @@ strings. All matchers must match. An invalid resolved regex leaves the
 previous filter in place and can be corrected without reopening the browser.
 
 Filters run locally against the Alerts list and stay active on refresh or
-connection switch. They don't save or change fuzzy search, sorting, connection,
-or selection. No Alertmanager silence or other server-side state is created.
+connection switch. Applying one doesn't change the fuzzy-search text, sort
+order, or connection. The file stores only label matchers and parameter
+definitions, not UI state. No Alertmanager silence or other server-side state
+is created.
 
 Example `alerts.yaml`:
 

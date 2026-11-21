@@ -51,6 +51,8 @@ type alertsState struct {
 	input         textinput.Model
 	filterAnchor  string
 	filterRow     int
+	structured    alertMatcherFilter
+	saved         alertFiltersDialog
 
 	dialog             alertDialog
 	detail             alertRow // Snapshot so refresh cannot move or replace the open details.
@@ -98,7 +100,7 @@ func (a *alertsState) rebuild(id string, row int, now time.Time) {
 	filter := newFuzzyFilter(a.currentFilter())
 	a.visible = a.visible[:0]
 	for _, item := range a.rows {
-		if !a.matches(item, filter, now) {
+		if (a.structured.match != nil && !a.structured.match(item.Labels)) || !a.matches(item, filter, now) {
 			continue
 		}
 		a.visible = append(a.visible, item)
@@ -296,6 +298,15 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 				return func() tea.Msg { return alertLabelsCopied{clipboard.WriteAll(text)} }
 			}
 		}
+		return nil
+	}
+	switch key {
+	case "m":
+		return m.openAlertMatcherEditor()
+	case "ctrl+o", "ctrl+s":
+		return m.openAlertFilters(key == "ctrl+s")
+	case "x":
+		m.setAlertMatchers(alertMatcherFilter{})
 		return nil
 	}
 	if a.err != nil {
