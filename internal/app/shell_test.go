@@ -127,15 +127,15 @@ func TestShellLayoutAndFooterOnResize(t *testing.T) {
 			}
 		}
 	}
-	check([2]int{100, 24}, "q1q1", "0 PromQL", "1 Alerts", "2 Silences", "3 Targets", "4 Routing", "Range · Last 1h", runHint)
+	check([2]int{100, 24}, "q1q1", "[0] PromQL", "[1] Alerts", "[2] Silences", "[3] Targets", "[4] Routing", "Range · Last 1h", runHint)
 	pressAlt(m, '1')
 	check([2]int{100, 24}, "╭─ › Alerts", "PromTUI q1q1", "Set alertmanager_url", "0–4 Tabs", "q Quit")
-	if !strings.Contains(m.screen(), activeTabStyle.Render(" 1 Alerts ")) ||
+	if !strings.Contains(m.screen(), activeTabStyle.Render(" [1] Alerts ")) ||
 		strings.Contains(m.footer(), "Run") || strings.Contains(m.footer(), "History") {
 		t.Fatal("Alerts is not highlighted or displays PromQL actions")
 	}
 	press(m, '2')
-	check([2]int{24, 10}, "╭─ › Silences", "Set alertmanager_url", "0–4 Tabs")
+	check([2]int{24, 10}, "[0] [1] [2] [3] [4]", "╭─ › Silences", "Set alertmanager_url", "0–4 Tabs")
 	pressAlt(m, '3')
 	check([2]int{24, 10}, "╭─ › Targets", "Missing target", "0–4 Tabs")
 	check([2]int{19, 6}, "Enlarge terminal", "0–4 Tabs")

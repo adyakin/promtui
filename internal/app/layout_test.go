@@ -87,7 +87,7 @@ func TestFloatingDialogsFitAndKeepWorkspace(t *testing.T) {
 			screen := ansi.Strip(m.screen())
 			rows := strings.Split(screen, "\n")
 			d := m.dialogBounds(w)
-			if len(rows) != size[1] || !strings.Contains(rows[0], "PromTUI") ||
+			if len(rows) != size[1] || !strings.Contains(rows[0], "[0]") ||
 				!strings.Contains(rows[d.y], title) || !strings.Contains(rows[len(rows)-1], "Esc Back") {
 				t.Fatalf("%v:\n%s", size, screen)
 			}

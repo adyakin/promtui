@@ -188,9 +188,12 @@ func (m *Model) header(active tabID, statuses ...string) string {
 	bar := func(compact bool) string {
 		var s strings.Builder
 		for i, tab := range tabs {
-			label := fmt.Sprintf(" %d %s ", i, tab)
+			label := fmt.Sprintf(" [%d] %s ", i, tab)
 			if compact {
-				label = fmt.Sprintf(" %d", i)
+				if i > 0 {
+					s.WriteByte(' ')
+				}
+				label = fmt.Sprintf("[%d]", i)
 			}
 			if tabID(i) == active {
 				label = activeTabStyle.Render(label)
@@ -200,17 +203,22 @@ func (m *Model) header(active tabID, statuses ...string) string {
 		return s.String()
 	}
 	tabBar := bar(false)
+	tabDivider := divider
 	if ansi.StringWidth(brand+divider+tabBar) > m.width {
 		brand = "PromTUI"
 		tabBar = bar(true)
+		tabDivider = divider + " "
+		if ansi.StringWidth(brand+tabDivider+tabBar) > m.width {
+			brand, tabDivider = "", ""
+		}
 	}
 	left := brand
-	room := m.width - ansi.StringWidth(brand+divider+tabBar)
+	room := m.width - ansi.StringWidth(brand+tabDivider+tabBar)
 	connection := ui.Plain(m.opt.Connection.Name)
-	if connection != "" && room >= 3 {
+	if brand != "" && connection != "" && room >= 3 {
 		left += " " + ansi.Truncate(connection, room-2, "…")
 	}
-	left += divider + tabBar
+	left += tabDivider + tabBar
 	gap := m.width - ansi.StringWidth(left)
 	for _, status := range statuses {
 		if n := ansi.StringWidth(status); n+1 <= gap {

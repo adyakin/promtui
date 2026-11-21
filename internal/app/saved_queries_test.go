@@ -225,7 +225,7 @@ func TestSavedOverlayKeepsKittyPlacementAndBounds(t *testing.T) {
 	check := func() {
 		t.Helper()
 		rows := strings.Split(ansi.Strip(m.screen()), "\n")
-		if len(rows) != minHeight || !strings.Contains(rows[0], "PromTUI") || !strings.Contains(rows[minHeight-1], "Esc") {
+		if len(rows) != minHeight || !strings.Contains(rows[0], "[0]") || !strings.Contains(rows[minHeight-1], "Esc") {
 			t.Fatalf("dialog escaped screen bounds:\n%s", strings.Join(rows, "\n"))
 		}
 		for _, row := range rows {
