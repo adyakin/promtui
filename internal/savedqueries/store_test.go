@@ -6,9 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
+
+	"promtui/internal/parameters"
 )
 
 func mustOpen(t *testing.T, path string) Snapshot {
@@ -39,11 +40,11 @@ func TestCRUDPreservesOrderAndExpression(t *testing.T) {
 		t.Fatalf("read unexpectedly created the file: %v", err)
 	}
 	const expr = "\n sum(\n\tmetric{label=\"☃\"}  \n )\n\n"
-	s, err := s.Add("  First  ", expr)
+	s, err := s.Add("  First  ", expr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err = s.Add("Second", "up")
+	s, err = s.Add("Second", "up", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,18 +52,18 @@ func TestCRUDPreservesOrderAndExpression(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := s.Queries(), []Query{{"RENAMED", expr}, {"Second", "up"}}; !slices.Equal(got, want) {
+	if got, want := s.Queries(), []Query{{Name: "RENAMED", Expression: expr}, {Name: "Second", Expression: "up"}}; !queriesEqual(got, want) {
 		t.Fatalf("rename lost formatting or order: %#v", got)
 	}
-	s, err = s.Update(1, " vector(1) ")
+	s, err = s.Update(1, " vector(1) ", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := mustOpen(t, path).Queries()[1]; got != (Query{"Second", " vector(1) "}) {
+	if got := mustOpen(t, path).Queries()[1]; got.Name != "Second" || got.Expression != " vector(1) " || got.Parameters != nil {
 		t.Fatalf("update = %#v", got)
 	}
 	const indented = "  up\n + 2\n"
-	s, err = s.Update(1, indented)
+	s, err = s.Update(1, indented, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +74,7 @@ func TestCRUDPreservesOrderAndExpression(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := mustOpen(t, path).Queries(); !slices.Equal(got, []Query{{"RENAMED", expr}}) {
+	if got := mustOpen(t, path).Queries(); !queriesEqual(got, []Query{{Name: "RENAMED", Expression: expr}}) {
 		t.Fatalf("delete = %#v", got)
 	}
 	if _, err := s.Delete(0); err != nil {
@@ -90,14 +91,14 @@ func TestExpressionEncoding(t *testing.T) {
 		s := mustOpen(t, path)
 		var err error
 		if len(s.Queries()) == 0 {
-			_, err = s.Add("14", expression)
+			_, err = s.Add("14", expression, nil)
 		} else {
-			_, err = s.Update(0, expression)
+			_, err = s.Update(0, expression, nil)
 		}
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := mustOpen(t, path).Queries()[0]; got != (Query{"14", expression}) {
+		if got := mustOpen(t, path).Queries()[0]; got.Name != "14" || got.Expression != expression || got.Parameters != nil {
 			t.Errorf("wanted expression %q, got %#v", expression, got)
 		}
 	}
@@ -105,11 +106,11 @@ func TestExpressionEncoding(t *testing.T) {
 
 func TestRejectsInvalidChanges(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "queries.yaml")
-	s, err := mustOpen(t, path).Add("Metrics", "up")
+	s, err := mustOpen(t, path).Add("Metrics", "up", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err = s.Add("OTHER", "down")
+	s, err = s.Add("OTHER", "down", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,12 +119,12 @@ func TestRejectsInvalidChanges(t *testing.T) {
 		name string
 		edit func() (Snapshot, error)
 	}{
-		{"duplicate", func() (Snapshot, error) { return s.Add(" metrics ", "up") }},
-		{"empty name", func() (Snapshot, error) { return s.Add(" \t", "up") }},
-		{"empty expression", func() (Snapshot, error) { return s.Add("Valid", " \t\n") }},
+		{"duplicate", func() (Snapshot, error) { return s.Add(" metrics ", "up", nil) }},
+		{"empty name", func() (Snapshot, error) { return s.Add(" \t", "up", nil) }},
+		{"empty expression", func() (Snapshot, error) { return s.Add("Valid", " \t\n", nil) }},
 		{"rename duplicate", func() (Snapshot, error) { return s.Rename(0, "other") }},
 		{"rename blank", func() (Snapshot, error) { return s.Rename(0, " ") }},
-		{"update blank", func() (Snapshot, error) { return s.Update(0, "\n") }},
+		{"update blank", func() (Snapshot, error) { return s.Update(0, "\n", nil) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := tc.edit(); err == nil || mustRead(t, path) != raw {
@@ -162,7 +163,7 @@ func TestWritesReplaceFileAndSkipIdenticalUpdates(t *testing.T) {
 		t.Skip("same-directory rename over an open file is tested on Unix")
 	}
 	path := filepath.Join(t.TempDir(), "queries.yaml")
-	s, err := mustOpen(t, path).Add("CPU", "up")
+	s, err := mustOpen(t, path).Add("CPU", "up", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,12 +186,12 @@ func TestWritesReplaceFileAndSkipIdenticalUpdates(t *testing.T) {
 			t.Fatalf("unexpected replacement or permissions: %v", info.Mode())
 		}
 	}
-	s, err = s.Update(0, "up")
+	s, err = s.Update(0, "up", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	check(true)
-	if _, err := s.Update(0, "down"); err != nil {
+	if _, err := s.Update(0, "down", nil); err != nil {
 		t.Fatal(err)
 	}
 	check(false)
@@ -202,7 +203,7 @@ func TestWritesReplaceFileAndSkipIdenticalUpdates(t *testing.T) {
 func TestFailedWriteLeavesOriginalAndCleansTemp(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "queries.yaml")
-	s, err := mustOpen(t, path).Add("CPU", "up")
+	s, err := mustOpen(t, path).Add("CPU", "up", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +213,7 @@ func TestFailedWriteLeavesOriginalAndCleansTemp(t *testing.T) {
 		t.Fatal(err)
 	}
 	next, err := s.Delete(0)
-	if !errors.Is(err, ErrChanged) || mustRead(t, path) != external || !slices.Equal(next.Queries(), s.Queries()) {
+	if !errors.Is(err, ErrChanged) || mustRead(t, path) != external || !queriesEqual(next.Queries(), s.Queries()) {
 		t.Fatalf("unexpected concurrent edit result: %v", err)
 	}
 	if files, err := os.ReadDir(dir); err != nil || len(files) != 1 {
@@ -225,10 +226,130 @@ func TestFailedWriteLeavesOriginalAndCleansTemp(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Add("CPU", "up"); err == nil {
+	if _, err := s.Add("CPU", "up", nil); err == nil {
 		t.Fatal("expected a filesystem error")
 	}
 	if info, err := os.Stat(path); err != nil || !info.IsDir() {
 		t.Fatalf("write changed the destination directory: %v, %v", info, err)
+	}
+}
+
+func TestParameterizedRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queries.yaml")
+	service := "okd4-prod"
+	defs := []parameters.Parameter{{Name: "service", Default: &service}, {Name: "threshold"}}
+	expr := `sum(rate(http_requests_total{servicename="${service}"}[5m])) > ${threshold}`
+
+	s := mustOpen(t, path)
+	s, err := s.Add("Req rate", expr, defs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := mustOpen(t, path).Queries()[0]
+	if got.Name != "Req rate" || got.Expression != expr {
+		t.Fatalf("template not preserved: %#v", got)
+	}
+	if len(got.Parameters) != 2 || got.Parameters[0].Name != "service" ||
+		got.Parameters[0].Default == nil || *got.Parameters[0].Default != "okd4-prod" ||
+		got.Parameters[1].Name != "threshold" || got.Parameters[1].Default != nil {
+		t.Fatalf("parameters not preserved: %#v", got.Parameters)
+	}
+	raw := mustRead(t, path)
+	if !strings.Contains(raw, "parameters:") || !strings.Contains(raw, `servicename="${service}"`) {
+		t.Fatalf("template was not persisted as a template: %q", raw)
+	}
+
+	// Rewriting the collection for a different item keeps the template intact.
+	s, err = s.Add("Plain", "up + ${literal}", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := mustOpen(t, path).Queries()
+	if len(all) != 2 {
+		t.Fatalf("queries = %v", all)
+	}
+	if all[0].Expression != expr || len(all[0].Parameters) != 2 {
+		t.Fatalf("template changed after another save: %#v", all[0])
+	}
+	if all[1].Parameters != nil || all[1].Expression != "up + ${literal}" {
+		t.Fatalf("plain item was not literal: %#v", all[1])
+	}
+
+	// Updating the template replaces the stored template.
+	s, err = s.Update(0, `sum(rate(http_requests_total{servicename="${service}"}[1m]))`, defs[:1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = mustOpen(t, path).Queries()[0]
+	if got.Expression != `sum(rate(http_requests_total{servicename="${service}"}[1m]))` ||
+		len(got.Parameters) != 1 || got.Parameters[0].Name != "service" ||
+		got.Parameters[0].Default == nil || *got.Parameters[0].Default != "okd4-prod" {
+		t.Fatalf("template update not persisted: %#v", got)
+	}
+
+	// Explicit empty parameters list reads back as a plain item.
+	if err := os.WriteFile(path, []byte("queries:\n  - name: E\n    expression: up\n    parameters: []\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustOpen(t, path).Queries()[0]; len(got.Parameters) != 0 {
+		t.Fatalf("explicit empty parameters were not plain: %#v", got.Parameters)
+	}
+}
+
+func TestRejectsInvalidTemplates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queries.yaml")
+	s := mustOpen(t, path)
+	s, err := s.Add("OK", `metric{i="${i}"}`, []parameters.Parameter{{Name: "i"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := mustRead(t, path)
+	for _, tc := range []struct {
+		name string
+		edit func() (Snapshot, error)
+	}{
+		{"undefined reference", func() (Snapshot, error) {
+			return s.Add("Bad", `metric{i="${nope}"}`, []parameters.Parameter{{Name: "i"}})
+		}},
+		{"unused parameter", func() (Snapshot, error) {
+			return s.Add("Bad", `metric{i="${i}"}`, []parameters.Parameter{{Name: "i"}, {Name: "unused"}})
+		}},
+		{"duplicate parameter", func() (Snapshot, error) {
+			return s.Add("Bad", `metric{i="${i}"}`, []parameters.Parameter{{Name: "i"}, {Name: "i"}})
+		}},
+		{"invalid parameter name", func() (Snapshot, error) {
+			return s.Add("Bad", `metric{i="${i}"}`, []parameters.Parameter{{Name: "bad-name"}})
+		}},
+		{"malformed placeholder", func() (Snapshot, error) { return s.Add("Bad", `metric{i="${i"}`, []parameters.Parameter{{Name: "i"}}) }},
+		{"empty template", func() (Snapshot, error) { return s.Add("Bad", " ", []parameters.Parameter{{Name: "i"}}) }},
+		{"update undefined reference", func() (Snapshot, error) {
+			return s.Update(0, `metric{i="${nope}"}`, []parameters.Parameter{{Name: "i"}})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := tc.edit(); err == nil || mustRead(t, path) != raw {
+				t.Fatalf("invalid template was accepted or changed the file: %v", err)
+			}
+		})
+	}
+	// Declared but unused definitions are rejected on load as well.
+	bad := "queries:\n  - name: Bad\n    expression: up\n    parameters:\n      - name: unused\n"
+	if err := os.WriteFile(path, []byte(bad), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil || mustRead(t, path) != bad {
+		t.Fatalf("Open accepted invalid template or changed the file: %v", err)
+	}
+}
+
+func TestLegacyLiteralDollarsLoadByteForByte(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queries.yaml")
+	s := mustOpen(t, path)
+	const expr = `rate(x{l="$${host"} + ${notparsed}`
+	if _, err := s.Add("Lit", expr, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustOpen(t, path).Queries()[0]; got.Expression != expr || got.Parameters != nil {
+		t.Fatalf("legacy expression was not loaded byte-for-byte: %#v", got)
 	}
 }

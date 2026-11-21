@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/editor"
+	"promtui/internal/parameters"
 	"promtui/internal/savedqueries"
 	"promtui/internal/ui"
 )
@@ -183,7 +184,26 @@ func (m *Model) backSavedQueries() {
 
 func (m *Model) loadSavedQuery() tea.Cmd {
 	q := &m.savedQueries
-	expression := q.queries[q.selectedIndex()].Expression
+	saved := q.queries[q.selectedIndex()]
+	if len(saved.Parameters) != 0 {
+		return m.openParameters(saved.Name, saved.Parameters, func(values parameters.Values) (tea.Cmd, error) {
+			expression, err := parameters.Resolve(saved.Expression, values)
+			if err != nil {
+				return nil, err
+			}
+			next := m.editor
+			next.SetValue(expression) // Same cursor placement as history restore.
+			if next.Value() != expression {
+				return nil, errors.New("this expression exceeds editor limits or contains unsupported characters")
+			}
+			m.editor = next
+			m.backSavedQueries()
+			m.cursor = -1
+			m.diagnostic = editor.Diagnostic(expression)
+			return m.editor.Focus(), nil
+		})
+	}
+	expression := saved.Expression
 	next := m.editor
 	next.SetValue(expression) // Same cursor placement as history restore.
 	if next.Value() != expression {
@@ -204,13 +224,13 @@ func (m *Model) applySavedAction() tea.Cmd {
 	var message string
 	switch q.action {
 	case addSaved:
-		snapshot, err = q.snapshot.Add(q.input.Value(), q.expression)
+		snapshot, err = q.snapshot.Add(q.input.Value(), q.expression, nil)
 		message = "Query saved"
 	case renameSaved:
 		snapshot, err = q.snapshot.Rename(q.target, q.input.Value())
 		message = "Query renamed"
 	case updateSaved:
-		snapshot, err = q.snapshot.Update(q.target, q.expression)
+		snapshot, err = q.snapshot.Update(q.target, q.expression, q.queries[q.target].Parameters)
 		message = "Query updated"
 		if err == nil && q.queries[q.target].Expression == q.expression {
 			message = "Query already up to date"
@@ -247,7 +267,7 @@ type savedFeedbackExpired int
 
 func (m *Model) savedDialogWidth() int {
 	width := 48
-	if m.panel == savedBrowserKeys || m.panel == savedSearchKeys {
+	if m.panel == savedBrowserKeys || m.panel == savedSearchKeys || m.panel == savedTemplateKeys {
 		width = 56
 	}
 	return min(width, m.width-2)

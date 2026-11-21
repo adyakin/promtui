@@ -36,7 +36,7 @@ func savedFixture(t *testing.T, names ...string) string {
 		t.Fatal(err)
 	}
 	for _, name := range names {
-		s, err = s.Add(name, "up\n+ 1")
+		s, err = s.Add(name, "up\n+ 1", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,8 +71,9 @@ func TestSaveQueryDialogAndEditorFocus(t *testing.T) {
 		t.Fatal("save modified the editor or ran the query")
 	}
 	s, err := savedqueries.Open(m.opt.SavedQueriesPath)
-	if err != nil || len(s.Queries()) != 2 || s.Queries()[1] != (savedqueries.Query{Name: "New", Expression: want}) {
-		t.Fatalf("wrong persisted query: %v, %v", s.Queries(), err)
+	got := s.Queries()
+	if err != nil || len(got) != 2 || got[1].Name != "New" || got[1].Expression != want || got[1].Parameters != nil {
+		t.Fatalf("wrong persisted query: %v, %v", got, err)
 	}
 	m.Update(savedFeedbackExpired(m.savedFeedbackID))
 	if m.savedFeedback != "" {

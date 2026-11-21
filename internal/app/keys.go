@@ -12,7 +12,7 @@ import (
 	"promtui/internal/ui"
 )
 
-type keyScope uint16
+type keyScope uint32
 
 const (
 	editKeys keyScope = 1 << iota
@@ -31,11 +31,12 @@ const (
 	savedNameKeys
 	savedConfirmKeys
 	queryErrorKeys
-	savedQueryKeys = savedBrowserKeys | savedSearchKeys | savedNameKeys | savedConfirmKeys
-	resultKeys     = tableKeys | graphKeys
-	mainKeys       = editKeys | resultKeys
-	scrollKeys     = helpKeys | detailKeys | labelKeys | queryErrorKeys
-	allKeys        = mainKeys | completionKeys | historyKeys | scrollKeys | rangeKeys | seriesKeys | filterKeys | savedQueryKeys
+	savedTemplateKeys keyScope = 1 << 16
+	savedQueryKeys             = savedBrowserKeys | savedSearchKeys | savedNameKeys | savedConfirmKeys
+	resultKeys                 = tableKeys | graphKeys
+	mainKeys                   = editKeys | resultKeys
+	scrollKeys                 = helpKeys | detailKeys | labelKeys | queryErrorKeys
+	allKeys                    = mainKeys | completionKeys | historyKeys | scrollKeys | rangeKeys | seriesKeys | filterKeys | savedQueryKeys | savedTemplateKeys
 )
 
 type binding struct {
@@ -85,9 +86,14 @@ var bindings = []binding{
 	{"savedSearch", "/", "/", "/ Search", savedBrowserKeys},
 	{"savedRename", "e", "e", "e Rename", savedBrowserKeys},
 	{"savedUpdate", "u", "u", "u Update", savedBrowserKeys},
+	{"savedCreateTemplate", "p", "p", "p Create", savedBrowserKeys},
 	{"savedDelete", "d", "d", "d Delete", savedBrowserKeys},
 	{"savedSearchDone", "enter", "Enter", "Enter Done", savedSearchKeys},
 	{"savedApply", "enter", "Enter", "Enter Confirm", savedNameKeys | savedConfirmKeys},
+	{"savedTemplateApply", "ctrl+enter ctrl+g", "Ctrl+Enter", "Ctrl+Enter Apply", savedTemplateKeys},
+	{"savedTemplateFocus", "tab up down shift+tab", "Tab Next", "Tab Next", savedTemplateKeys},
+	{"savedTemplateAdd", "ctrl+a", "^A Add", "^A Add", savedTemplateKeys},
+	{"savedTemplateRemove", "ctrl+d", "^D Remove", "^D Remove", savedTemplateKeys},
 	{"cancelOrQuit", "ctrl+c", "Ctrl+C", "Ctrl+C Quit", allKeys},
 	{"back", "esc", "Esc", "Esc Back", allKeys &^ resultKeys},
 	{"help", "?", "?", "? Help", resultKeys | helpKeys | detailKeys},
@@ -190,7 +196,7 @@ func (m *Model) promQLFooter() string {
 	var hints []string
 	reserved := ""
 	gap := "   "
-	if scope&savedQueryKeys != 0 {
+	if scope&savedQueryKeys != 0 || scope == savedTemplateKeys {
 		gap = "  "
 	}
 	if scope == queryErrorKeys {
@@ -234,7 +240,7 @@ func (m *Model) promQLFooter() string {
 		if b.id == "scroll" && scope == queryErrorKeys && m.width < 27 {
 			hint = "↑↓"
 		}
-		if b.id == "back" && scope&savedQueryKeys != 0 {
+		if b.id == "back" && (scope&savedQueryKeys != 0 || scope == savedTemplateKeys) {
 			hint = "Esc Cancel"
 			if scope == savedBrowserKeys {
 				hint = "Esc Close"
@@ -318,6 +324,8 @@ func (m *Model) key(k tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch scope {
 	case savedNameKeys, savedSearchKeys:
 		return m.editSavedInput(k), true
+	case savedTemplateKeys:
+		return m.editTemplate(k), true
 	case historyKeys, filterKeys:
 		if m.resultFilter.input.Focused() {
 			return m.editResultFilter(k), true
@@ -372,6 +380,8 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		switch scope {
 		case savedBrowserKeys, savedSearchKeys, savedNameKeys, savedConfirmKeys:
 			m.backSavedQueries()
+		case savedTemplateKeys:
+			m.backSavedTemplate()
 		case editKeys, completionKeys:
 			m.dismiss()
 			m.editor.Blur()
@@ -548,11 +558,32 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	case "savedRename":
 		return m.openSavedAction(renameSaved)
 	case "savedUpdate":
+		q := &m.savedQueries
+		if idx := q.selectedIndex(); idx >= 0 && len(q.queries[idx].Parameters) > 0 {
+			return m.openSavedTemplateEditor(idx) // Explicit template editing for parameterized items.
+		}
 		return m.openSavedAction(updateSaved)
+	case "savedCreateTemplate":
+		if q := &m.savedQueries; q.selectedIndex() >= 0 {
+			return m.openSavedTemplateEditor(q.selectedIndex())
+		}
+		return nil
 	case "savedDelete":
 		return m.openSavedAction(deleteSaved)
 	case "savedApply":
 		return m.applySavedAction()
+	case "savedTemplateApply":
+		return m.applySavedTemplate()
+	case "savedTemplateFocus":
+		delta := 1
+		if key == "up" || key == "shift+tab" {
+			delta = -1
+		}
+		return m.moveTemplateFocus(delta)
+	case "savedTemplateAdd":
+		return m.addTemplateParam()
+	case "savedTemplateRemove":
+		return m.removeTemplateParam()
 	case "complete":
 		return m.schedule(true)
 	case "recall":
