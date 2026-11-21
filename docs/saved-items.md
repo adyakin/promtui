@@ -108,3 +108,5 @@ or booleans, and use one YAML document per file. Reopen the browser to see
 external edits; if a file changed since you opened it, PromTUI rejects a stale
 save rather than replacing the updated collection. Invalid files aren't silently
 discarded. PromTUI writes a complete file atomically with private permissions.
+The on-disk check is not a lock; avoid writing the same file simultaneously
+from PromTUI and external automation.

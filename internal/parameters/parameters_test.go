@@ -85,3 +85,18 @@ func TestDefaultYAMLRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func FuzzEscapeLiteral(f *testing.F) {
+	for _, seed := range []string{"", "${parameter}", "$${x} $$$", "${unclosed", "${outer${inner}雪", "\x00\r\n"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, text string) {
+		template := EscapeLiteral(text)
+		if err := Validate(nil, template); err != nil {
+			t.Fatalf("escaped %q is invalid: %v", template, err)
+		}
+		if got, err := Resolve(template, nil); err != nil || got != text {
+			t.Fatalf("literal %q became %q, %v", text, got, err)
+		}
+	})
+}
