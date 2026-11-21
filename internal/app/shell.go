@@ -20,6 +20,7 @@ const (
 	silencesTab
 	targetsTab
 	routingTab
+	rulesTab
 )
 
 var tabs = [...]string{
@@ -28,6 +29,7 @@ var tabs = [...]string{
 	silencesTab: "Silences",
 	targetsTab:  "Targets",
 	routingTab:  "Routing",
+	rulesTab:    "Rules",
 }
 
 type shellState struct {
@@ -55,6 +57,9 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	if m.activeTab == routingTab && m.routing.dialog != routingNoDialog && !m.pickingConnection {
 		return m.routingModalKey(key.String()), true
 	}
+	if m.activeTab == rulesTab && m.rules.overlayTitle != "" && !m.pickingConnection {
+		return m.rulesModalKey(key.String()), true
+	}
 	targetModal := m.activeTab == targetsTab && m.targets.dialog != noTargetDialog
 	if len(m.opt.Connections) > 0 {
 		switch k := key.Keystroke(); {
@@ -71,6 +76,10 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 			if next != m.activeTab {
 				if m.activeTab == routingTab {
 					m.cancelRoutingSearch()
+				}
+				if m.activeTab == rulesTab {
+					m.cancelRulesSearch()
+					m.rules.stop()
 				}
 				if m.activeTab == alertsTab {
 					m.alerts.stop()
@@ -93,12 +102,18 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 				if next == routingTab && m.routing.data == nil {
 					return m.refreshRouting(), true
 				}
+				if next == rulesTab {
+					return m.rulesOnEntry(time.Now()), true
+				}
 			}
 			return nil, true
 		}
 	}
 	switch key.String() {
 	case "ctrl+c":
+		if m.activeTab == rulesTab && m.rules.cancel != nil {
+			return m.cancelRulesRefresh(time.Now()), true
+		}
 		if m.activeTab == routingTab && m.routing.cancel != nil {
 			m.routing.stop()
 			m.routing.err, m.routing.errorOffset = context.Canceled, 0
@@ -137,6 +152,9 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	if m.activeTab == routingTab {
 		return m.routingKey(key), true
 	}
+	if m.activeTab == rulesTab {
+		return m.rulesKey(key), true
+	}
 	return nil, false
 }
 
@@ -152,6 +170,9 @@ func (m *Model) textInputFocused() bool {
 	}
 	if m.activeTab == routingTab {
 		return m.routing.search.Focused()
+	}
+	if m.activeTab == rulesTab {
+		return m.rules.search.Focused()
 	}
 	switch m.scope() {
 	case editKeys, completionKeys, historyKeys, filterKeys:
@@ -176,6 +197,9 @@ func (m *Model) footer() string {
 	if m.activeTab == routingTab {
 		return m.routingFooter()
 	}
+	if m.activeTab == rulesTab {
+		return m.rulesFooter()
+	}
 	return m.targetsFooter()
 }
 
@@ -183,17 +207,19 @@ var activeTabStyle = lipgloss.NewStyle().Bold(true).
 	Foreground(lipgloss.Color("0")).Background(lipgloss.Color("6"))
 
 func (m *Model) header(active tabID, statuses ...string) string {
-	brand := " PromTUI"
+	brand := "PromTUI"
 	const divider = " │"
-	bar := func(compact bool) string {
+	bar := func(compact, tight bool) string {
 		var s strings.Builder
 		for i, tab := range tabs {
 			label := fmt.Sprintf(" [%d] %s ", i, tab)
 			if compact {
-				if i > 0 {
+				if i > 0 && !tight {
 					s.WriteByte(' ')
 				}
 				label = fmt.Sprintf("[%d]", i)
+			} else {
+				label = strings.TrimRight(label, " ")
 			}
 			if tabID(i) == active {
 				label = activeTabStyle.Render(label)
@@ -202,14 +228,16 @@ func (m *Model) header(active tabID, statuses ...string) string {
 		}
 		return s.String()
 	}
-	tabBar := bar(false)
+	tabBar := bar(false, false)
 	tabDivider := divider
 	if ansi.StringWidth(brand+divider+tabBar) > m.width {
-		brand = "PromTUI"
-		tabBar = bar(true)
+		tabBar = bar(true, false)
 		tabDivider = divider + " "
 		if ansi.StringWidth(brand+tabDivider+tabBar) > m.width {
 			brand, tabDivider = "", ""
+		}
+		if len(statuses) != 0 && ansi.StringWidth(tabBar+statuses[len(statuses)-1])+1 > m.width {
+			tabBar = bar(true, true)
 		}
 	}
 	left := brand
@@ -270,6 +298,10 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 	}
 	if m.activeTab == routingTab {
 		screen, cursor := m.routingScreen()
+		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
+	}
+	if m.activeTab == rulesTab {
+		screen, cursor := m.rulesScreen()
 		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
 	}
 	screen, cursor := m.targetsScreen(time.Now())

@@ -254,10 +254,10 @@ func (m *Model) promQLFooter() string {
 				hints = append(hints, m.connectionHint())
 			}
 			if b.id == "results" {
-				hints = append(hints, "Alt+0–4 Tabs")
+				hints = append(hints, "Alt+0–5 Tabs")
 			}
 			if b.id == "edit" {
-				hints = append(hints, "0–4 Tabs")
+				hints = append(hints, "0–5 Tabs")
 			}
 		}
 	}
@@ -354,6 +354,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 		m.silences.stop()
 		m.targets.stop(nil)
 		m.routing.stop()
+		m.rules.stop()
 		m.quitting = true
 	case "run":
 		m.dismiss()

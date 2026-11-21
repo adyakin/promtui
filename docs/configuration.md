@@ -54,6 +54,14 @@ base URL rules, including support for reverse-proxy path prefixes. Configuring
 `targets` replaces the fallback, rather than adding to it. Existing TOML
 configurations continue to use the connection URL for Targets.
 
+## Rule sources
+
+Rules uses the connection `url` unless a nonempty `vmalert` list is configured
+on the YAML connection. That list replaces the fallback. Each entry needs a
+unique name and an HTTP(S) base URL without credentials, query or fragment.
+Sources inherit the connection's TLS verification setting and the configured
+request timeout. See [Rules Explorer](rules.md) for an example.
+
 ## Alerts and Targets columns and search
 
 In YAML, each connection can set `alerts.columns`, `alerts.search`,

@@ -16,13 +16,24 @@ type Connection struct {
 	AlertmanagerURL    string
 	InsecureSkipVerify bool
 	Targets            []TargetSource
+	VMAlert            []RuleSource
 	Alerts             TableView
 	TargetsView        TableView
 }
 
-type TargetSource struct {
+type EndpointSource struct {
 	Name string `yaml:"name"`
 	URL  string `yaml:"url"`
+}
+
+type TargetSource = EndpointSource
+type RuleSource = EndpointSource
+
+func (c Connection) RuleSources() []RuleSource {
+	if len(c.VMAlert) != 0 {
+		return c.VMAlert
+	}
+	return []RuleSource{{Name: c.Name, URL: c.URL}}
 }
 
 type generalSettings struct {
@@ -58,6 +69,7 @@ type rawConnection struct {
 	AlertmanagerURL    string         `toml:"alertmanager_url"`
 	InsecureSkipVerify *bool          `toml:"insecure_skip_verify"`
 	Targets            []TargetSource `toml:"-"`
+	VMAlert            []RuleSource   `toml:"-"`
 	Alerts             TableView      `toml:"-"`
 	TargetsView        TableView      `toml:"-"`
 }
@@ -145,17 +157,11 @@ func resolve(s settings, insecure bool, raw []rawConnection) (Config, error) {
 		if conn.AlertmanagerURL != "" && !validBaseURL(conn.AlertmanagerURL) {
 			return c, fmt.Errorf("connection %q: alertmanager_url must be an HTTP(S) base URL without credentials, query or fragment", conn.Name)
 		}
-		names := make(map[string]bool, len(conn.Targets))
-		for i := range conn.Targets {
-			source := &conn.Targets[i]
-			source.Name = strings.TrimSpace(source.Name)
-			if source.Name == "" || names[source.Name] {
-				return c, fmt.Errorf("connection %q: missing or duplicate target source name %q", conn.Name, source.Name)
-			}
-			if !validBaseURL(source.URL) {
-				return c, fmt.Errorf("connection %q: target source %q url must be an HTTP(S) base URL without credentials, query or fragment", conn.Name, source.Name)
-			}
-			names[source.Name] = true
+		if err := validateSources(conn.Targets, "target"); err != nil {
+			return c, fmt.Errorf("connection %q: %w", conn.Name, err)
+		}
+		if err := validateSources(conn.VMAlert, "vmalert"); err != nil {
+			return c, fmt.Errorf("connection %q: %w", conn.Name, err)
 		}
 		skipVerify := insecure
 		if conn.InsecureSkipVerify != nil {
@@ -163,7 +169,7 @@ func resolve(s settings, insecure bool, raw []rawConnection) (Config, error) {
 		}
 		c.Connections = append(c.Connections, Connection{
 			Name: conn.Name, URL: conn.URL, AlertmanagerURL: conn.AlertmanagerURL, InsecureSkipVerify: skipVerify, Targets: conn.Targets,
-			Alerts: conn.Alerts, TargetsView: conn.TargetsView,
+			Alerts: conn.Alerts, TargetsView: conn.TargetsView, VMAlert: conn.VMAlert,
 		})
 		seen[conn.Name] = true
 	}
@@ -180,6 +186,22 @@ func resolve(s settings, insecure bool, raw []rawConnection) (Config, error) {
 		return c, fmt.Errorf("query.timeout must be positive")
 	}
 	return c, nil
+}
+
+func validateSources(sources []EndpointSource, role string) error {
+	names := make(map[string]bool, len(sources))
+	for i := range sources {
+		source := &sources[i]
+		source.Name = strings.TrimSpace(source.Name)
+		if source.Name == "" || names[source.Name] {
+			return fmt.Errorf("missing or duplicate %s source name %q", role, source.Name)
+		}
+		if !validBaseURL(source.URL) {
+			return fmt.Errorf("%s source %q url must be an HTTP(S) base URL without credentials, query or fragment", role, source.Name)
+		}
+		names[source.Name] = true
+	}
+	return nil
 }
 
 func validBaseURL(value string) bool {

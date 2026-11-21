@@ -69,7 +69,15 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 		m.routing = newRoutingState()
 		m.routing.requestID, m.routing.showReceivers = routingID, showReceivers
 		m.sizeRoutingInput()
+		m.rules.stop()
+		rulesID, rulesTick := m.rules.requestID, m.rules.tickQueued
+		m.rules = newRulesState(next)
+		m.rules.requestID, m.rules.tickQueued = rulesID, rulesTick
+		m.sizeRulesInput()
 		m.opt.Connection = next
+		if m.activeTab == rulesTab {
+			return m.refreshRules()
+		}
 		if m.activeTab == routingTab {
 			return m.refreshRouting()
 		}
