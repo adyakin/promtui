@@ -7,6 +7,7 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	"promtui/internal/config"
 )
 
 func TestStatusRowTextColors(t *testing.T) {
@@ -33,6 +34,15 @@ func TestStatusRowTextColors(t *testing.T) {
 		{"alert warning", "warning", func(selected bool) string {
 			return alertColumns(60, selected, "Active", "warning", "DiskFull", "node", "1m")
 		}, nil},
+		{"custom alert severity", "critical", func(selected bool) string {
+			table := layoutViewTable(config.AlertsView, []config.Column{{Field: "labels.servicename"}, {Field: "labels.severity"}}, 60)
+			return table.row(selected, func(field string, _ int) (string, color.Color) {
+				if field == "labels.severity" {
+					return "critical", alertSeverityTint("critical")
+				}
+				return "billing", nil
+			})
+		}, ansi.Red},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			plain := ansi.Strip(tt.row(false))

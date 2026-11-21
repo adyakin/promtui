@@ -25,3 +25,9 @@ connections:
     #     url: https://monitoring.example.org/vmagent-east
     #   - name: agent-west
     #     url: https://monitoring.example.org/vmagent-west
+    # alerts:
+    #   columns: [state, {field: labels.servicename, title: Service}, alertname, duration]
+    #   search: [labels.servicename, labels.alertname, labels.instance]
+    # targets_view:
+    #   columns: [health, {field: labels.servicename, title: Service}, instance, last_scrape]
+    #   search: [labels.servicename, labels.instance]

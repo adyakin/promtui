@@ -67,7 +67,9 @@ type targetsState struct {
 	source, row     int // source 0 means all; otherwise it is the source index plus one.
 	health          int // Index into targetHealthOrder.
 	activeHealth    int
-	sort            targetSort
+	view            config.TableView
+	sort            string
+	sorts           []viewSort
 	filter, anchor  string
 	anchorRow       int
 	input           textinput.Model
@@ -89,9 +91,13 @@ func newTargetsState(conn config.Connection) targetsState {
 	input := textinput.New()
 	input.Prompt = "  Filter: "
 	input.Placeholder = "health, source, labels, scrape fields"
+	if conn.TargetsView.Search != nil {
+		input.Placeholder = "configured fields"
+	}
 	input.CharLimit = 4096
 	input.SetVirtualCursor(false)
-	a := targetsState{input: input}
+	a := targetsState{input: input, view: conn.TargetsView, sort: sortTargetHealth,
+		sorts: viewSorts(config.TargetsView, defaultTargetSorts, conn.TargetsView.Columns)}
 	for _, src := range conn.Targets {
 		a.sources = append(a.sources, targetSourceState{TargetSource: src})
 	}
@@ -149,7 +155,7 @@ func (a *targetsState) rebuild(id string, row int) {
 		for j := range source.rows {
 			item := &source.rows[j]
 			if (item.health == health || health == targetAllActive && item.health != targetDropped) &&
-				item.matches(filter) {
+				a.matches(item, filter) {
 				a.visible = append(a.visible, item)
 			}
 		}
@@ -162,6 +168,13 @@ func (a *targetsState) rebuild(id string, row int) {
 			break
 		}
 	}
+}
+
+func (a *targetsState) matches(row *targetRow, filter fuzzyFilter) bool {
+	if a.view.Search != nil {
+		return matchesFields(filter, a.view.Search, row.field)
+	}
+	return row.matches(filter)
 }
 
 func (a *targetsState) stop(err error) {

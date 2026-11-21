@@ -54,7 +54,7 @@ Default paths on macOS and Linux:
 - **Saved queries:** `~/.local/share/promtui/queries.yaml`
 - **History:** `~/.local/share/promtui/history.jsonl`
 
-Start with the full [`config.example.yaml`](config.example.yaml), or pass any YAML or TOML config with `-config PATH`. See the [configuration reference](docs/configuration.md) for all settings, TLS options, and target sources.
+Start with the full [`config.example.yaml`](config.example.yaml), or pass any YAML or TOML config with `-config PATH`. See the [configuration reference](docs/configuration.md) for TLS options, target sources, and per-connection Alerts and Targets columns and search.
 
 ## Publishing a release
 

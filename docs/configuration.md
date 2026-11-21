@@ -52,6 +52,88 @@ base URL rules, including support for reverse-proxy path prefixes. Configuring
 `targets` replaces the fallback, rather than adding to it. Existing TOML
 configurations continue to use the connection URL for Targets.
 
+## Alerts and Targets columns and search
+
+In YAML, each connection can set `alerts.columns`, `alerts.search`,
+`targets_view.columns`, and `targets_view.search`. `targets_view` only controls
+the table and filter; `targets` still defines where to fetch targets.
+
+Each list replaces its own default. Set only `columns` to change what's visible
+without changing search, or set only `search` to change `/` without changing
+the table. Columns appear in YAML order. A column can be a field name or
+`{field: ..., title: ...}` to override its heading. Built-in fields use their
+usual headings; `labels.servicename` defaults to `SERVICENAME`.
+
+| View | Built-in fields you can configure |
+| --- | --- |
+| Alerts | `state`, `severity`, `alertname`, `instance`, `duration` |
+| Targets | `health`, `instance`, `job`, `source`, `last_scrape`, `duration`, `scrape_url`, `scrape_pool`, `global_url`, `last_error`, `scrape_interval`, `scrape_timeout` |
+
+Use `labels.<name>` for a label value in either view. Everything after `labels.`
+is the literal name, including any dots. For Targets this reads the final `labels`
+map, not discovery metadata. An unavailable label displays `—` and contributes
+no search text. Labels don't have to exist when PromTUI loads the config.
+
+`/` still matches characters in order, case-insensitively, within a single
+field. With a `search` list it only searches those values, including hidden
+fields if listed. Without it, Alerts searches state, severity, alert name,
+instance, and duration. Targets retains its default search across health,
+source, scrape fields, and final and discovered labels. An explicitly
+configured Targets `last_scrape` displays the age but searches the timestamp.
+
+Without `columns`, Alerts shows State, Severity, Alert, Instance, and Duration;
+Targets shows Health, Instance, Job, Source, Last scrape, and Duration. On
+narrow terminals, headings and values may be truncated and rightmost columns
+may be clipped. `s` cycles through the existing sort modes, then through any
+additional configured columns. Label sorts are ascending, with missing values
+last. The default sort on entry is unchanged.
+
+For Prometheus with its built-in Targets endpoint and a separate Alertmanager:
+
+```yaml
+connections:
+  local:
+    url: http://localhost:9090
+    alertmanager_url: http://localhost:9093
+    alerts:
+      columns: [state, {field: labels.alertname, title: Alert}, duration]
+    targets_view:
+      search: [labels.job, labels.instance, scrape_url]
+```
+
+For VictoriaMetrics with two vmagent sources and a final `servicename` label:
+
+```yaml
+connections:
+  production:
+    url: http://vmselect:8481/select/0/prometheus
+    alertmanager_url: https://monitoring.example.org/alertmanager
+    alerts:
+      columns:
+        - state
+        - {field: labels.severity, title: Severity}
+        - {field: labels.servicename, title: Service}
+        - {field: labels.alertname, title: Alert}
+        - duration
+      search: [labels.servicename, labels.alertname, labels.instance]
+    targets:
+      - {name: east, url: "https://monitoring.example.org/vmagent-east"}
+      - {name: west, url: "https://monitoring.example.org/vmagent-west"}
+    targets_view:
+      columns:
+        - health
+        - {field: labels.servicename, title: Service}
+        - {field: labels.instance, title: Host}
+        - last_scrape
+      search: [labels.servicename, labels.instance]
+```
+
+Omit a list to use its default; empty lists are invalid. Unknown built-ins,
+`labels.` without a name, duplicate column fields, and invalid column objects
+(missing `field`, blank `title`, or unknown properties) fail at startup.
+Errors identify the connection and setting, for example
+`connection "production": alerts.columns[2]: unknown field "service"`.
+
 ## TLS verification
 
 HTTPS certificates are verified by default. In either format, the top-level

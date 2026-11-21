@@ -118,7 +118,7 @@ func (m *Model) targetsKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 		a.rebuild(id, 0)
 	case "s":
-		a.sort = (a.sort + 1) % targetSort(len(targetSortNames))
+		a.sort = nextViewSort(a.sorts, a.sort)
 		a.rebuild(id, a.row)
 	case "r":
 		return m.refreshTargets()

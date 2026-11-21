@@ -14,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/alertmanager"
+	"promtui/internal/config"
 	"promtui/internal/ui"
 )
 
@@ -106,7 +107,7 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	case a.err != nil:
 		meta = renderPaneError(body, m.alertErrorRows(), a.errorOffset)
 	case m.opt.Connection.AlertmanagerURL == "":
-		copy(body, strings.Split(ansi.Wrap("Set alertmanager_url in this connection’s TOML configuration to load alerts.", width-4, ""), "\n"))
+		copy(body, strings.Split(ansi.Wrap("Set alertmanager_url in this connection’s configuration to load alerts.", width-4, ""), "\n"))
 		for i, row := range body {
 			if row != "" {
 				body[i] = "  " + row
@@ -130,10 +131,7 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 				cursor = nativeCursor(min(m.width-2, 1+c.X), 3)
 			}
 		default:
-			body[1] = "  Sort: state/severity"
-			if a.newestFirst {
-				body[1] = "  Sort: newest"
-			}
+			body[1] = "  Sort: " + viewSortTitle(a.sorts, a.sort)
 			if a.filter != "" {
 				body[1] = "  Filter: " + ui.Plain(a.filter) + " · " + strings.TrimSpace(body[1])
 			}
@@ -144,12 +142,39 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 		case len(a.visible) == 0:
 			body[2] = "  No matching alerts"
 		default:
-			body[2] = title.Render(alertColumns(width, false, "State", "Severity", "Alert", "Instance", "Duration"))
 			room := m.alertPage()
 			first := min(max(0, a.row-room/2), max(0, len(a.visible)-room))
-			for i := first; i < min(first+room, len(a.visible)); i++ {
-				f := a.visible[i].tableFields(now)
-				body[3+i-first] = alertColumns(width, i == a.row, f.state, f.severity, f.name, f.instance, f.duration)
+			last := min(first+room, len(a.visible))
+			if a.view.Columns == nil {
+				var headings [len(defaultAlertFields)]string
+				for i, field := range defaultAlertFields {
+					headings[i] = config.AlertsView.FieldTitle(field)
+				}
+				body[2] = title.Render(alertColumns(width, false, headings[0], headings[1], headings[2], headings[3], headings[4]))
+				for i := first; i < last; i++ {
+					row := a.visible[i]
+					var values [len(defaultAlertFields)]string
+					for j, field := range defaultAlertFields {
+						values[j] = alertValue(row.field(field, now))
+					}
+					body[3+i-first] = alertColumns(width, i == a.row, values[0], values[1], values[2], values[3], values[4])
+				}
+			} else {
+				table := layoutViewTable(config.AlertsView, a.view.Columns, width)
+				body[2] = table.header()
+				for i := first; i < last; i++ {
+					row := a.visible[i]
+					body[3+i-first] = table.row(i == a.row, func(field string, width int) (string, color.Color) {
+						value := row.field(field, now)
+						if field == "severity" || field == "labels.severity" {
+							return value, alertSeverityTint(value)
+						}
+						if field == "state" && value == "Silenced + Inhibited" && width < len(value) {
+							value = "Sil.+Inhib."
+						}
+						return value, nil
+					})
+				}
 			}
 		}
 	}
@@ -187,16 +212,20 @@ func alertColumns(width int, selected bool, state, severity, name, instance, dur
 	const severityWidth, durationWidth = 8, 8
 	remaining := width - 2 - stateWidth - severityWidth - durationWidth - 4*len(separator)
 	instanceWidth := max(5, remaining*2/5)
-	var tint color.Color
-	switch strings.ToLower(severity) {
-	case "critical":
-		tint = statusRed
-	case "high":
-		tint = statusYellow
-	}
 	after := separator + strings.Join([]string{alertColumn(name, remaining-instanceWidth),
 		alertColumn(instance, instanceWidth), ansi.Truncate(duration, durationWidth, "…")}, separator)
-	return renderStatusRow(width, selected, alertColumn(state, stateWidth)+separator, alertColumn(severity, severityWidth), after, tint)
+	return renderStatusRow(width, selected, alertColumn(state, stateWidth)+separator, alertColumn(severity, severityWidth), after, alertSeverityTint(severity))
+}
+
+func alertSeverityTint(severity string) color.Color {
+	switch strings.ToLower(severity) {
+	case "critical":
+		return statusRed
+	case "high":
+		return statusYellow
+	default:
+		return nil
+	}
 }
 
 func alertColumn(s string, width int) string {
@@ -279,8 +308,8 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll status", "Esc or ?: return to status"}
 		default:
 			lines = []string{"↑ / ↓: select an alert", "PgUp / PgDn: move one page", "Home / End: first / last alert",
-				"Enter: open details", "/: fuzzy-filter table columns (Enter applies, Esc cancels)",
-				"s: switch between state/severity and newest-first", "r: refresh now (auto-refresh every 30s)",
+				"Enter: open details", "/: fuzzy-filter alerts (Enter applies, Esc cancels)",
+				"s: cycle sort modes", "r: refresh now (auto-refresh every 30s)",
 				"Alt+S: show request status", "0 / 1 / 2 or Alt+0 / 1 / 2: switch tabs", "q: quit"}
 			if a.err != nil {
 				lines = append([]string{"↑ / ↓ and PgUp / PgDn: scroll the error"}, lines...)

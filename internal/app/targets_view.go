@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/api"
+	"promtui/internal/config"
 	"promtui/internal/ui"
 )
 
@@ -158,9 +159,10 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 			src := a.sources[a.source-1]
 			sourceLabel = src.Name + " (" + src.status() + ")"
 		}
-		body[1] = "  " + targetHealthNames[targetHealthOrder[a.health]] + " · " + ui.Plain(sourceLabel) + " · Sort: " + targetSortNames[a.sort]
+		sortLabel := viewSortTitle(a.sorts, a.sort)
+		body[1] = "  " + targetHealthNames[targetHealthOrder[a.health]] + " · " + ui.Plain(sourceLabel) + " · Sort: " + sortLabel
 		if a.filter != "" {
-			body[1] = "  " + targetHealthNames[targetHealthOrder[a.health]] + " · /" + ui.Plain(a.filter) + " · " + ui.Plain(sourceLabel) + " · Sort: " + targetSortNames[a.sort]
+			body[1] = "  " + targetHealthNames[targetHealthOrder[a.health]] + " · /" + ui.Plain(a.filter) + " · " + ui.Plain(sourceLabel) + " · Sort: " + sortLabel
 		}
 		if a.input.Focused() && !hasError {
 			body[1] = a.input.View()
@@ -191,13 +193,36 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 		meta = renderPaneError(body, m.targetErrorRows(), a.errorOffset)
 	case len(a.visible) > 0:
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
-		body[2] = title.Render(targetColumns(width, false, [6]string{"Health", "Instance", "Job", "Source", "Last scrape", "Duration"}))
 		room := m.targetPage()
 		first := min(max(0, a.row-room/2), max(0, len(a.visible)-room))
-		for i := first; i < min(first+room, len(a.visible)); i++ {
-			row := a.visible[i]
-			body[3+i-first] = targetColumns(width, i == a.row, [6]string{targetHealthNames[row.health], alertValue(row.instance), alertValue(row.job), row.source,
-				targetScrapeAge(row.lastScrape, now), targetDuration(row.LastScrapeDuration)})
+		last := min(first+room, len(a.visible))
+		if a.view.Columns == nil {
+			var headings [len(defaultTargetFields)]string
+			for i, field := range defaultTargetFields {
+				headings[i] = config.TargetsView.FieldTitle(field)
+			}
+			body[2] = title.Render(targetColumns(width, false, headings))
+			for i := first; i < last; i++ {
+				row := a.visible[i]
+				var values [len(defaultTargetFields)]string
+				for j, field := range defaultTargetFields {
+					values[j] = alertValue(row.displayField(field, now))
+				}
+				body[3+i-first] = targetColumns(width, i == a.row, values)
+			}
+		} else {
+			table := layoutViewTable(config.TargetsView, a.view.Columns, width)
+			body[2] = table.header()
+			for i := first; i < last; i++ {
+				row := a.visible[i]
+				body[3+i-first] = table.row(i == a.row, func(field string, _ int) (string, color.Color) {
+					value := row.displayField(field, now)
+					if field == "health" {
+						return value, targetHealthTint(value)
+					}
+					return value, nil
+				})
+			}
 		}
 	case len(a.sources) != 0:
 		body[2] = "  No targets matching the current filter"
@@ -256,14 +281,18 @@ func targetColumns(width int, selected bool, values [6]string) string {
 		after.WriteString("  ")
 		after.WriteString(alertColumn(values[i], sizes[i]))
 	}
-	var tint color.Color
-	switch values[0] {
+	return renderStatusRow(width, selected, "", alertColumn(values[0], sizes[0]), after.String(), targetHealthTint(values[0]))
+}
+
+func targetHealthTint(health string) color.Color {
+	switch health {
 	case targetHealthNames[targetDown]:
-		tint = statusRed
+		return statusRed
 	case targetHealthNames[targetUnknown]:
-		tint = statusYellow
+		return statusYellow
+	default:
+		return nil
 	}
-	return renderStatusRow(width, selected, "", alertColumn(values[0], sizes[0]), after.String(), tint)
 }
 
 func targetScrapeAge(at, now time.Time) string {

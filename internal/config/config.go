@@ -16,6 +16,8 @@ type Connection struct {
 	AlertmanagerURL    string
 	InsecureSkipVerify bool
 	Targets            []TargetSource
+	Alerts             TableView
+	TargetsView        TableView
 }
 
 type TargetSource struct {
@@ -55,6 +57,8 @@ type rawConnection struct {
 	AlertmanagerURL    string         `toml:"alertmanager_url"`
 	InsecureSkipVerify *bool          `toml:"insecure_skip_verify"`
 	Targets            []TargetSource `toml:"-"`
+	Alerts             TableView      `toml:"-"`
+	TargetsView        TableView      `toml:"-"`
 }
 
 func defaults() settings {
@@ -158,6 +162,7 @@ func resolve(s settings, insecure bool, raw []rawConnection) (Config, error) {
 		}
 		c.Connections = append(c.Connections, Connection{
 			Name: conn.Name, URL: conn.URL, AlertmanagerURL: conn.AlertmanagerURL, InsecureSkipVerify: skipVerify, Targets: conn.Targets,
+			Alerts: conn.Alerts, TargetsView: conn.TargetsView,
 		})
 		seen[conn.Name] = true
 	}

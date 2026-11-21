@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"promtui/internal/alertmanager"
+	"promtui/internal/config"
 )
 
 type alertStatus uint8
@@ -81,12 +82,37 @@ func countAlerts(rows []alertRow) alertCounts {
 	return c
 }
 
-type alertFields struct{ state, severity, name, instance, duration string }
+var defaultAlertFields = [...]string{"state", "severity", "alertname", "instance", "duration"}
 
-func (a alertRow) tableFields(now time.Time) alertFields {
-	return alertFields{
-		state: a.state(), severity: alertValue(a.Labels["severity"]), name: alertValue(a.Labels["alertname"]),
-		instance: alertValue(a.Labels["instance"]), duration: alertDuration(a.StartsAt, now),
+func (a alertRow) field(field string, now time.Time) string {
+	if label, ok := config.LabelName(field); ok {
+		return a.Labels[label]
+	}
+	switch field {
+	case "state":
+		return a.state()
+	case "severity", "alertname", "instance":
+		return a.Labels[field]
+	case "duration":
+		if !a.StartsAt.IsZero() {
+			return alertDuration(a.StartsAt, now)
+		}
+	}
+	return ""
+}
+
+func compareAlertField(a, b alertRow, field string, now time.Time) int {
+	switch field {
+	case "state":
+		return cmp.Compare(a.group, b.group)
+	case "severity":
+		x, y := strings.ToLower(a.Labels["severity"]), strings.ToLower(b.Labels["severity"])
+		return cmp.Or(cmp.Compare(severityRank(x), severityRank(y)), cmp.Compare(x, y))
+	case "duration":
+		return cmp.Or(missingLast(a.StartsAt.IsZero(), b.StartsAt.IsZero()),
+			cmp.Compare(max(0, now.Sub(b.StartsAt)), max(0, now.Sub(a.StartsAt))))
+	default:
+		return compareFieldText(a.field(field, now), b.field(field, now))
 	}
 }
 

@@ -81,7 +81,7 @@ func New(o Options, entries []history.Entry) *Model {
 	e.Prompt = "│ "
 	e.CharLimit = 65536
 	e.MaxWidth = 0
-	m := &Model{alerts: newAlertsState(), targets: newTargetsState(o.Connection), promQLState: promQLState{
+	m := &Model{alerts: newAlertsState(o.Connection.Alerts), targets: newTargetsState(o.Connection), promQLState: promQLState{
 		opt: o, entries: entries, cursor: -1, editor: e, resultFilter: newResultFilter(), status: "Ready", summary: "No query executed",
 	}}
 	m.resize(80, 24)
