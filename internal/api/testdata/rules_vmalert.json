@@ -1,0 +1,42 @@
+{
+  "status": "success",
+  "data": {
+    "groups": [
+      {
+        "name": "vm-node",
+        "type": "prometheus",
+        "id": "18000000000000000001",
+        "file": "vm-node.yml",
+        "interval": 20,
+        "lastEvaluation": "2026-05-11T06:21:00Z",
+        "concurrency": 2,
+        "eval_delay": 10,
+        "labels": {"region": "east"},
+        "states": {"pending": 1, "": 1},
+        "rules": [
+          {
+            "state": "pending",
+            "name": "HighLoad",
+            "query": "default_rollup(node_load1) > 10",
+            "duration": 300,
+            "keep_firing_for": 120,
+            "labels": {"region": "east"},
+            "annotations": {"summary": "High load"},
+            "lastError": "",
+            "evaluationTime": 0.012,
+            "lastEvaluation": "2026-05-11T06:21:00Z",
+            "alerts": [
+              {"state": "pending", "name": "HighLoad", "value": "12", "labels": {"instance": "vm-1"}, "annotations": {"summary": "Load 12"}, "activeAt": "2026-05-11T06:20:00Z", "id": "98", "rule_id": "88", "group_id": "18000000000000000001", "restored": true, "stabilizing": false}
+            ],
+            "health": "ok",
+            "type": "alerting",
+            "lastSamples": 1,
+            "lastSeriesFetched": 2,
+            "id": "88"
+          },
+          {"name": "node:load:max", "query": "max(node_load1)", "duration": 0, "keep_firing_for": 0, "type": "recording", "health": "ok", "evaluationTime": 0.003, "id": "99"}
+        ]
+      }
+    ]
+  }
+}

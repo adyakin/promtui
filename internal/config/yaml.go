@@ -48,6 +48,7 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 			AlertmanagerURL    string    `yaml:"alertmanager_url"`
 			InsecureSkipVerify yaml.Node `yaml:"insecure_skip_verify"`
 			Targets            yaml.Node `yaml:"targets"`
+			VMAlert            yaml.Node `yaml:"vmalert"`
 			Alerts             yaml.Node `yaml:"alerts"`
 			TargetsView        yaml.Node `yaml:"targets_view"`
 		}
@@ -58,7 +59,7 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 				if value.Content[j+1].ShortTag() != "!!str" {
 					return fmt.Errorf("connection %q: line %d: %s must be a string", key.Value, field.Line, field.Value)
 				}
-			case "insecure_skip_verify", "targets", "alerts", "targets_view":
+			case "insecure_skip_verify", "targets", "vmalert", "alerts", "targets_view":
 			default:
 				return fmt.Errorf("connection %q: line %d: unknown field %q", key.Value, field.Line, field.Value)
 			}
@@ -70,7 +71,11 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("connection %q: %w", key.Value, err)
 		}
-		targets, err := yamlTargets(fields.Targets)
+		targets, err := yamlSources(fields.Targets, "targets", "target")
+		if err != nil {
+			return fmt.Errorf("connection %q: %w", key.Value, err)
+		}
+		rules, err := yamlSources(fields.VMAlert, "vmalert", "vmalert")
 		if err != nil {
 			return fmt.Errorf("connection %q: %w", key.Value, err)
 		}
@@ -84,13 +89,13 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 		}
 		*c = append(*c, rawConnection{
 			Name: key.Value, URL: fields.URL, AlertmanagerURL: fields.AlertmanagerURL, InsecureSkipVerify: override, Targets: targets,
-			Alerts: alerts, TargetsView: targetsView,
+			Alerts: alerts, TargetsView: targetsView, VMAlert: rules,
 		})
 	}
 	return nil
 }
 
-func yamlTargets(node yaml.Node) ([]TargetSource, error) {
+func yamlSources(node yaml.Node, keyName, role string) ([]EndpointSource, error) {
 	if node.Kind == 0 {
 		return nil, nil
 	}
@@ -98,25 +103,25 @@ func yamlTargets(node yaml.Node) ([]TargetSource, error) {
 		node = *node.Alias
 	}
 	if node.Kind != yaml.SequenceNode || len(node.Content) == 0 {
-		return nil, fmt.Errorf("line %d: targets must be a nonempty list of named sources", node.Line)
+		return nil, fmt.Errorf("line %d: %s must be a nonempty list of named sources", node.Line, keyName)
 	}
 	for _, source := range node.Content {
 		if source.Kind == yaml.AliasNode {
 			source = source.Alias
 		}
 		if source.Kind != yaml.MappingNode {
-			return nil, fmt.Errorf("line %d: target source must be a mapping", source.Line)
+			return nil, fmt.Errorf("line %d: %s source must be a mapping", source.Line, role)
 		}
 		for i := 0; i < len(source.Content); i += 2 {
 			key, value := source.Content[i], source.Content[i+1]
 			if key.Value != "name" && key.Value != "url" {
-				return nil, fmt.Errorf("line %d: unknown target source field %q", key.Line, key.Value)
+				return nil, fmt.Errorf("line %d: unknown %s source field %q", key.Line, role, key.Value)
 			}
 			if value.Kind == yaml.AliasNode {
 				value = value.Alias
 			}
 			if value.ShortTag() != "!!str" {
-				return nil, fmt.Errorf("line %d: target source %s must be a string", value.Line, key.Value)
+				return nil, fmt.Errorf("line %d: %s source %s must be a string", value.Line, role, key.Value)
 			}
 		}
 	}

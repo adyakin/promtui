@@ -51,6 +51,7 @@ type Model struct {
 	silences      silencesState
 	targets       targetsState
 	routing       routingState
+	rules         rulesState
 	httpClients   map[bool]*http.Client
 	programStatus terminalStatus
 }
@@ -84,7 +85,7 @@ func New(o Options, entries []history.Entry) *Model {
 	e.Prompt = "│ "
 	e.CharLimit = 65536
 	e.MaxWidth = 0
-	m := &Model{alerts: newAlertsState(o.Connection.Alerts), targets: newTargetsState(o.Connection), silences: newSilencesState(), routing: newRoutingState(), promQLState: promQLState{
+	m := &Model{alerts: newAlertsState(o.Connection.Alerts), targets: newTargetsState(o.Connection), silences: newSilencesState(), routing: newRoutingState(), rules: newRulesState(o.Connection), promQLState: promQLState{
 		opt: o, entries: entries, cursor: -1, editor: e, resultFilter: newResultFilter(), status: "Ready", summary: "No query executed",
 	}}
 	m.resize(80, 24)
@@ -100,6 +101,7 @@ func (m *Model) resize(w, h int) {
 	m.sizeSavedInput()
 	m.sizeSilenceInputs()
 	m.sizeRoutingInput()
+	m.sizeRulesInput()
 }
 func (m *Model) Init() tea.Cmd {
 	if m.opt.ProbeGraphics {
@@ -238,6 +240,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case rulesLoaded:
+		return m, m.onRulesLoaded(v, time.Now())
+	case rulesTick:
+		return m, m.onRulesTick(time.Time(v))
 	case routingLoaded:
 		m.routing.loaded(v)
 		return m, nil
@@ -368,6 +374,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if !m.quitting && m.activeTab == routingTab && m.routing.search.Focused() {
 			return m, m.editRoutingSearch(v)
+		}
+		if !m.quitting && m.activeTab == rulesTab && m.rules.search.Focused() {
+			return m, m.editRulesSearch(v)
 		}
 		if m.quitting || m.activeTab != promQLTab {
 			return m, nil

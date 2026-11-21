@@ -320,7 +320,7 @@ func (m *Model) routingKey(msg tea.KeyPressMsg) tea.Cmd {
 				}
 			}
 		default:
-			layout := m.routingLayout()
+			layout := m.explorerLayout()
 			if v.details {
 				v.detailOffset = scrollPaneError(routingNavKey(k), v.detailOffset, len(m.routingDetails(layout.detailWidth)), layout.detailRows)
 			} else if len(v.visible) != 0 {

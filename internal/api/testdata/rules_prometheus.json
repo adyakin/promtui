@@ -1,0 +1,37 @@
+{
+  "status": "success",
+  "data": {
+    "groups": [
+      {
+        "name": "node",
+        "file": "/etc/prometheus/node.rules.yml",
+        "interval": 30,
+        "limit": 0,
+        "evaluationTime": 0.004,
+        "lastEvaluation": "2026-05-11T06:21:00Z",
+        "rules": [
+          {
+            "name": "NodeUnavailable",
+            "type": "alerting",
+            "state": "firing",
+            "query": "sum by (instance) (\n  up == 0\n)",
+            "duration": 300,
+            "keepFiringFor": 60,
+            "health": "ok",
+            "labels": {"severity": "page"},
+            "annotations": {"summary": "Node unreachable"},
+            "evaluationTime": 0.002,
+            "lastEvaluation": "2026-05-11T06:21:00Z",
+            "alerts": [
+              {"state": "firing", "labels": {"instance": "a:9100"}, "annotations": {"summary": "A is unreachable"}, "activeAt": "2026-05-11T06:00:00Z", "keepFiringSince": "2026-05-11T06:20:50Z", "value": "0e+00"},
+              {"state": "pending", "labels": {"instance": "b:9100"}, "annotations": {}, "activeAt": "2026-05-11T06:20:00Z", "value": "0e+00"}
+            ]
+          },
+          {"name": "node:up:sum", "type": "recording", "query": "sum(up)", "labels": {"team": "ops"}, "health": "err", "lastError": "evaluation timed out", "evaluationTime": 0.002},
+          {"name": "Quiet", "type": "alerting", "state": "inactive", "query": "up > 99", "health": "ok", "alerts": []}
+        ]
+      },
+      {"name": "empty", "file": "empty.yml", "rules": []}
+    ]
+  }
+}

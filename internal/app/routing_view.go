@@ -23,24 +23,24 @@ const (
 	routingRefreshHint    = "r Refresh"
 )
 
-type routingLayout struct {
+type explorerLayout struct {
 	listWidth, detailWidth int
 	listRows, detailRows   int
 	stacked                bool
 }
 
-func (m *Model) routingLayout() routingLayout {
+func (m *Model) explorerLayout() explorerLayout {
 	if m.width < 68 {
 		room := max(3, m.height-7)
 		list := max(2, room/2)
-		return routingLayout{m.width, m.width, list, room - list, true}
+		return explorerLayout{m.width, m.width, list, room - list, true}
 	}
 	list := max(28, m.width*44/100)
-	return routingLayout{list, m.width - list - 1, m.height - 5, m.height - 5, false}
+	return explorerLayout{list, m.width - list - 1, max(2, m.height-5), max(2, m.height-5), false}
 }
 
 func (m *Model) sizeRoutingInput() {
-	m.routing.search.SetWidth(max(1, m.routingLayout().listWidth-5))
+	m.routing.search.SetWidth(max(1, m.explorerLayout().listWidth-5))
 }
 
 func (m *Model) routingFooter() string {
@@ -53,7 +53,7 @@ func (m *Model) routingFooter() string {
 		return format([]string{routingSelectHint, "Enter Jump"}, "Esc Back")
 	}
 	if s.search.Focused() {
-		return format([]string{"Enter Apply", "Alt+0–4 Tabs"}, "Esc Cancel")
+		return format([]string{"Enter Apply", "Alt+0–5 Tabs"}, "Esc Cancel")
 	}
 	hints := []string{}
 	v := s.current()
@@ -98,7 +98,7 @@ func (m *Model) routingFooter() string {
 			hints = append(hints, "s Sort")
 		}
 	}
-	hints = append(hints, "0–4 Tabs")
+	hints = append(hints, "0–5 Tabs")
 	if len(m.opt.Connections) != 0 {
 		hints = append(hints, m.connectionHint())
 	}
@@ -142,7 +142,7 @@ func (m *Model) routingScreen() (string, *tea.Cursor) {
 		body = frame(name, meta, rows, m.width, s.dialog == routingNoDialog && !m.pickingConnection)
 	} else {
 		v := s.current()
-		layout := m.routingLayout()
+		layout := m.explorerLayout()
 		list, details := make([]string, layout.listRows), make([]string, layout.detailRows)
 		list[0] = fmt.Sprintf("  %d visible", len(v.visible))
 		if s.showReceivers && s.sortReceivers {
@@ -381,7 +381,7 @@ func (m *Model) routingDialogContent() (name string, rows []string, width, room 
 			routingReceiverHint + " (Routes) · " + routingReferencesHint + " (Receivers)",
 			"v Switch view · " + routingSearchHint + " (Enter apply; erase to clear)",
 			"s Sort receivers by name / configuration order",
-			routingRefreshHint + " (no polling) · 0–4 Tabs · q Quit",
+			routingRefreshHint + " (no polling) · 0–5 Tabs · q Quit",
 		}, width)
 	}
 	return name, rows, width, min(room, len(rows))

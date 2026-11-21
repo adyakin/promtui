@@ -46,17 +46,28 @@ func (m *Model) loadAlertQuery() tea.Cmd {
 		a.detailStatus = err.Error()
 		return nil
 	}
+	cmd, err := m.loadPromQLExpression(expression)
+	if err != nil {
+		a.detailStatus = err.Error()
+		return nil
+	}
+	a.dialog = alertNoDialog
+	a.stop()
+	return cmd
+}
+
+func (m *Model) loadPromQLExpression(expression string) (tea.Cmd, error) {
+	if strings.TrimSpace(expression) == "" {
+		return nil, errors.New("No rule expression available")
+	}
 	next := m.editor
 	next.SetValue(expression)
 	// The textarea can normalize characters or truncate input; don't replace
 	// the draft unless it can hold the exact decoded expression.
 	if next.Value() != expression {
-		a.detailStatus = "Query exceeds editor limits or contains unsupported characters"
-		return nil
+		return nil, errors.New("Query exceeds editor limits or contains unsupported characters")
 	}
 
-	a.dialog = alertNoDialog
-	a.stop()
 	m.activeTab = promQLTab
 	m.dismiss()
 	m.panel = 0
@@ -67,5 +78,5 @@ func (m *Model) loadAlertQuery() tea.Cmd {
 	m.editor = next
 	m.cursor = -1
 	m.diagnostic = editor.Diagnostic(expression)
-	return m.editor.Focus()
+	return m.editor.Focus(), nil
 }

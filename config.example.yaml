@@ -21,6 +21,11 @@ connections:
     url: http://vmselect:8481/select/0/prometheus
     # alertmanager_url: https://monitoring.example.org/alertmanager
     # insecure_skip_verify: false
+    # vmalert:
+    #   - name: alerts-east
+    #     url: https://monitoring.example.org/vmalert-east
+    #   - name: alerts-west
+    #     url: https://monitoring.example.org/vmalert-west
     # targets:
     #   - name: agent-east
     #     url: https://monitoring.example.org/vmagent-east
