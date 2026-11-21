@@ -27,7 +27,7 @@ PromTUI never rewrites either file.
 
 Durations use Go syntax (for example, `168h` for seven days). Every connection
 requires a Prometheus or VictoriaMetrics `url` and can have an optional
-`alertmanager_url` for Alerts and [Silences](silences.md). Both are HTTP(S)
+`alertmanager_url` for Alerts, [Silences](silences.md), and [Routing](routing.md). Both are HTTP(S)
 base URLs without credentials, query strings, or fragments. Path prefixes
 are supported.
 

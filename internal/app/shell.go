@@ -19,6 +19,7 @@ const (
 	alertsTab
 	silencesTab
 	targetsTab
+	routingTab
 )
 
 var tabs = [...]string{
@@ -26,6 +27,7 @@ var tabs = [...]string{
 	alertsTab:   "Alerts",
 	silencesTab: "Silences",
 	targetsTab:  "Targets",
+	routingTab:  "Routing",
 }
 
 type shellState struct {
@@ -50,6 +52,9 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	if m.activeTab == promQLTab && m.panel&(savedQueryKeys|queryErrorKeys) != 0 {
 		return nil, false // Modal dialogs own tab and connection shortcuts.
 	}
+	if m.activeTab == routingTab && m.routing.dialog != routingNoDialog && !m.pickingConnection {
+		return m.routingModalKey(key.String()), true
+	}
 	targetModal := m.activeTab == targetsTab && m.targets.dialog != noTargetDialog
 	if len(m.opt.Connections) > 0 {
 		switch k := key.Keystroke(); {
@@ -64,6 +69,9 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 		if key.Mod == tea.ModAlt || key.Mod == 0 && !m.textInputFocused() {
 			next := tabID(key.Code - '0')
 			if next != m.activeTab {
+				if m.activeTab == routingTab {
+					m.cancelRoutingSearch()
+				}
 				if m.activeTab == alertsTab {
 					m.alerts.stop()
 				}
@@ -82,12 +90,20 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 				if next == targetsTab {
 					return m.targetsOnEntry(time.Now()), true
 				}
+				if next == routingTab && m.routing.data == nil {
+					return m.refreshRouting(), true
+				}
 			}
 			return nil, true
 		}
 	}
 	switch key.String() {
 	case "ctrl+c":
+		if m.activeTab == routingTab && m.routing.cancel != nil {
+			m.routing.stop()
+			m.routing.err, m.routing.errorOffset = context.Canceled, 0
+			return nil, true
+		}
 		if m.activeTab == silencesTab && m.silences.listCancel != nil {
 			s := &m.silences
 			cancelSilenceRequest(&s.listCancel)
@@ -118,6 +134,9 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	if m.activeTab == targetsTab {
 		return m.targetsKey(key), true
 	}
+	if m.activeTab == routingTab {
+		return m.routingKey(key), true
+	}
 	return nil, false
 }
 
@@ -130,6 +149,9 @@ func (m *Model) textInputFocused() bool {
 	}
 	if m.activeTab == targetsTab {
 		return m.targets.input.Focused()
+	}
+	if m.activeTab == routingTab {
+		return m.routing.search.Focused()
 	}
 	switch m.scope() {
 	case editKeys, completionKeys, historyKeys, filterKeys:
@@ -151,6 +173,9 @@ func (m *Model) footer() string {
 	if m.activeTab == alertsTab {
 		return m.alertsFooter()
 	}
+	if m.activeTab == routingTab {
+		return m.routingFooter()
+	}
 	return m.targetsFooter()
 }
 
@@ -158,7 +183,8 @@ var activeTabStyle = lipgloss.NewStyle().Bold(true).
 	Foreground(lipgloss.Color("0")).Background(lipgloss.Color("6"))
 
 func (m *Model) header(active tabID, statuses ...string) string {
-	const brand, divider = " PromTUI", " │"
+	brand := " PromTUI"
+	const divider = " │"
 	bar := func(compact bool) string {
 		var s strings.Builder
 		for i, tab := range tabs {
@@ -171,13 +197,11 @@ func (m *Model) header(active tabID, statuses ...string) string {
 			}
 			s.WriteString(label)
 		}
-		if compact {
-			s.WriteByte(' ')
-		}
 		return s.String()
 	}
 	tabBar := bar(false)
 	if ansi.StringWidth(brand+divider+tabBar) > m.width {
+		brand = "PromTUI"
 		tabBar = bar(true)
 	}
 	left := brand
@@ -234,6 +258,10 @@ func (m *Model) renderScreen() (string, *tea.Cursor) {
 	}
 	if m.activeTab == silencesTab {
 		screen, cursor := m.silencesScreen(time.Now())
+		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
+	}
+	if m.activeTab == routingTab {
+		screen, cursor := m.routingScreen()
 		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
 	}
 	screen, cursor := m.targetsScreen(time.Now())

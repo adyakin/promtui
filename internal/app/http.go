@@ -1,9 +1,21 @@
 package app
 
 import (
+	"context"
 	"crypto/tls"
 	"net/http"
+
+	"promtui/internal/alertmanager"
 )
+
+func (m *Model) alertmanagerRequest() (alertmanager.Client, context.Context, context.CancelFunc) {
+	timeout := m.opt.Timeout
+	if timeout <= 0 {
+		timeout = alertRefreshInterval
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return alertmanager.Client{Base: m.opt.Connection.AlertmanagerURL, HTTP: m.connectionHTTP()}, ctx, cancel
+}
 
 // connectionHTTP is called before launching a request so it captures the
 // selected connection even if the user switches while the request is running.

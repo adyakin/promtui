@@ -58,7 +58,7 @@ func (m *Model) silencesFooter() string {
 		}
 		return format(append(hints, "a Affected alerts", "↑↓ Scroll"), "Esc Close")
 	case s.search.Focused():
-		return format([]string{"Enter Apply", "Alt+0–3 Tabs"}, "Esc Cancel")
+		return format([]string{"Enter Apply", "Alt+0–4 Tabs"}, "Esc Cancel")
 	}
 	var hints []string
 	if m.opt.Connection.AlertmanagerURL != "" {
@@ -82,7 +82,7 @@ func (m *Model) silencesFooter() string {
 	if len(m.opt.Connections) > 0 {
 		hints = append(hints, m.connectionHint())
 	}
-	return format(append(hints, "? Help", "0–3 Tabs", "q Quit"), "")
+	return format(append(hints, "? Help", "0–4 Tabs", "q Quit"), "")
 }
 
 func silenceError(err error) string {
@@ -272,7 +272,7 @@ func (m *Model) silenceDialogText(now time.Time) (name string, lines []string) {
 			"Details: e edit/copy · x expire · a affected alerts",
 			"Editor: Tab / Shift+Tab move · Enter activates buttons", "p on buttons (or Ctrl+P anywhere): preview",
 			"Ctrl+Enter or Ctrl+G: create or save · Esc: back",
-			"0–3: switch tabs (Alt+0–3 while searching)"}
+			"0–4: switch tabs (Alt+0–4 while searching)"}
 		if s.listErr != nil {
 			lines = append([]string{"Last refresh: " + silenceError(s.listErr), ""}, lines...)
 		}

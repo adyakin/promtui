@@ -30,9 +30,9 @@ func TestStartupShortcutsAndEditing(t *testing.T) {
 		t.Fatal("c did not open Connections at startup")
 	}
 	press(m, tea.KeyEsc)
-	for i, code := range "1230" {
+	for i, code := range "12340" {
 		press(m, code)
-		if m.activeTab != []tabID{alertsTab, silencesTab, targetsTab, promQLTab}[i] || m.editor.Value() != "" {
+		if m.activeTab != []tabID{alertsTab, silencesTab, targetsTab, routingTab, promQLTab}[i] || m.editor.Value() != "" {
 			t.Fatal("bare digit did not switch tabs before editing")
 		}
 	}
@@ -127,18 +127,20 @@ func TestShellLayoutAndFooterOnResize(t *testing.T) {
 			}
 		}
 	}
-	check([2]int{100, 24}, "q1q1", "0 PromQL", "1 Alerts", "2 Silences", "3 Targets", "Range · Last 1h", runHint)
+	check([2]int{100, 24}, "q1q1", "0 PromQL", "1 Alerts", "2 Silences", "3 Targets", "4 Routing", "Range · Last 1h", runHint)
 	pressAlt(m, '1')
-	check([2]int{100, 24}, "╭─ › Alerts", "PromTUI q1q1", "Set alertmanager_url", "0–3 Tabs", "q Quit")
+	check([2]int{100, 24}, "╭─ › Alerts", "PromTUI q1q1", "Set alertmanager_url", "0–4 Tabs", "q Quit")
 	if !strings.Contains(m.screen(), activeTabStyle.Render(" 1 Alerts ")) ||
 		strings.Contains(m.footer(), "Run") || strings.Contains(m.footer(), "History") {
 		t.Fatal("Alerts is not highlighted or displays PromQL actions")
 	}
 	press(m, '2')
-	check([2]int{24, 10}, "╭─ › Silences", "Set alertmanager_url", "0–3 Tabs")
+	check([2]int{24, 10}, "╭─ › Silences", "Set alertmanager_url", "0–4 Tabs")
 	pressAlt(m, '3')
-	check([2]int{24, 10}, "╭─ › Targets", "Missing target", "0–3 Tabs")
-	check([2]int{19, 6}, "Enlarge terminal", "0–3 Tabs")
+	check([2]int{24, 10}, "╭─ › Targets", "Missing target", "0–4 Tabs")
+	check([2]int{19, 6}, "Enlarge terminal", "0–4 Tabs")
+	press(m, '4')
+	check([2]int{100, 24}, "╭─ › Routes", "Set alertmanager_url", "v Receivers")
 	press(m, '0')
 	press(m, 'i')
 	check([2]int{70, 18}, "╭─ › Query", "Tab Results")
@@ -158,7 +160,7 @@ func TestTabSwitchDoesNotRequeryOrChangeTableState(t *testing.T) {
 	m.Update(completed{result: result})
 	press(m, tea.KeyDown, tea.KeyEnter)
 	table, id := m.table, m.id
-	for _, code := range "12301230" {
+	for _, code := range "1234012340" {
 		if _, cmd := m.Update(tea.KeyPressMsg{Code: code, Text: string(code)}); cmd != nil {
 			t.Fatalf("switching with %c scheduled work", code)
 		}
@@ -189,14 +191,14 @@ func TestShellClearsAndRestoresKittyPlacement(t *testing.T) {
 	_, upload := m.Update(render())
 
 	// Switch away with an upload already queued, then pick another tab.
-	press(m, '1', '2', '3')
+	press(m, '1', '2', '3', '4')
 	_, clear := m.Update(upload())
 	if clear == nil || !strings.Contains(string(clear().(tea.RawMsg).Msg.(graphPacket)), "a=d") ||
-		strings.Contains(m.screen(), "Missing target configuration") {
+		strings.Contains(m.screen(), "Routing unavailable") {
 		t.Fatal("graph was not cleared before showing the destination")
 	}
-	if _, cmd := m.Update(clear()); cmd != nil || !strings.Contains(m.screen(), "Missing target configuration") {
-		t.Fatal("Targets did not become visible after graph cleanup")
+	if _, cmd := m.Update(clear()); cmd != nil || !strings.Contains(m.screen(), "Routing unavailable") {
+		t.Fatal("Routing did not become visible after graph cleanup")
 	}
 	if _, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30}); cmd != nil {
 		t.Fatal("inactive tab attempted to render a graph")
@@ -211,7 +213,8 @@ func TestShellClearsAndRestoresKittyPlacement(t *testing.T) {
 		}
 		_, upload = m.Update(f)
 		m.Update(upload())
-		_, clear = m.Update(tea.KeyPressMsg{Code: '1', Text: "1"})
+		tab := []rune{'1', '3', '4'}[round]
+		_, clear = m.Update(tea.KeyPressMsg{Code: tab, Text: string(tab)})
 		m.Update(clear())
 		if m.chart.sending || m.chart.displayed.cols != 0 || m.chart.renderCancel != nil {
 			t.Fatalf("round %d: lingering graphics work or placement", round)

@@ -208,21 +208,12 @@ func (s *silencesState) rebuild(id string, row int, now time.Time) {
 	}
 }
 
-func (m *Model) silenceRequest() (alertmanager.Client, context.Context, context.CancelFunc) {
-	timeout := m.opt.Timeout
-	if timeout <= 0 {
-		timeout = alertRefreshInterval
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	return alertmanager.Client{Base: m.opt.Connection.AlertmanagerURL, HTTP: m.connectionHTTP()}, ctx, cancel
-}
-
 func (m *Model) refreshSilences() tea.Cmd {
 	s := &m.silences
 	if m.quitting || m.opt.Connection.AlertmanagerURL == "" || s.listCancel != nil {
 		return nil
 	}
-	client, ctx, cancel := m.silenceRequest()
+	client, ctx, cancel := m.alertmanagerRequest()
 	id := s.nextID()
 	s.listID, s.listCancel = id, cancel
 	return func() tea.Msg {
@@ -297,7 +288,7 @@ func (m *Model) fetchSilenceDetail() tea.Cmd {
 	cancelSilenceRequest(&s.detailCancel)
 	s.detailMatches.reset()
 	s.detailErr = nil
-	client, ctx, cancel := m.silenceRequest()
+	client, ctx, cancel := m.alertmanagerRequest()
 	id, target := s.nextID(), s.detail.ID
 	s.detailCancel, s.detailID = cancel, id
 	return func() tea.Msg {
@@ -331,7 +322,7 @@ func (m *Model) fetchSilenceMatches(editor bool, matchers []alertmanager.Matcher
 		p.err = err
 		return nil
 	}
-	client, ctx, cancel := m.silenceRequest()
+	client, ctx, cancel := m.alertmanagerRequest()
 	id := s.nextID()
 	p.id, p.cancel = id, cancel
 	return func() tea.Msg {
@@ -372,7 +363,7 @@ func (m *Model) writeSilence(spec alertmanager.SilenceSpec, previous *alertmanag
 	if s.writeCancel != nil || m.opt.Connection.AlertmanagerURL == "" {
 		return nil
 	}
-	client, ctx, cancel := m.silenceRequest()
+	client, ctx, cancel := m.alertmanagerRequest()
 	id := s.nextID()
 	s.writeID, s.writeCancel = id, cancel
 	return func() tea.Msg {

@@ -38,7 +38,7 @@ func (m *Model) alertsFooter() string {
 	case a.dialog == alertStatusDialog:
 		hints, back = []string{"↑↓ Scroll", "? Help"}, "Esc Close"
 	case a.input.Focused():
-		hints, back = []string{"Enter Apply", "Alt+S Status", "Alt+0–3 Tabs"}, "Esc Cancel"
+		hints, back = []string{"Enter Apply", "Alt+S Status", "Alt+0–4 Tabs"}, "Esc Cancel"
 		if len(m.opt.Connections) > 0 {
 			hints = append(hints, m.connectionHint())
 		}
@@ -67,7 +67,7 @@ func (m *Model) alertsFooter() string {
 		if a.cancel != nil {
 			hints = append(hints, "Ctrl+C Cancel")
 		}
-		hints = append(hints, "? Help", "Alt+S Status", "0–3 Tabs", "q Quit")
+		hints = append(hints, "? Help", "Alt+S Status", "0–4 Tabs", "q Quit")
 	}
 	return m.formatFooter(hints, back, "   ")
 }
@@ -324,7 +324,7 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			lines = []string{"↑ / ↓: select an alert", "PgUp / PgDn: move one page", "Home / End: first / last alert",
 				"Enter: open details", "/: fuzzy-filter alerts (Enter applies, Esc cancels)",
 				"s: cycle sort modes", "r: refresh now (auto-refresh every 30s)",
-				"Alt+S: show request status", "0–3 or Alt+0–3: switch tabs", "q: quit"}
+				"Alt+S: show request status", "0–4 or Alt+0–4: switch tabs", "q: quit"}
 			if a.err != nil {
 				lines = append([]string{"↑ / ↓ and PgUp / PgDn: scroll the error"}, lines...)
 			}
