@@ -16,6 +16,17 @@ type Parameter struct {
 
 type Values map[string]string
 
+func (p Parameter) MarshalYAML() (any, error) {
+	var value *yaml.Node
+	if p.Default != nil {
+		value = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: *p.Default, Style: yaml.DoubleQuotedStyle}
+	}
+	return struct {
+		Name    string     `yaml:"name"`
+		Default *yaml.Node `yaml:"default,omitempty"`
+	}{p.Name, value}, nil
+}
+
 func (p *Parameter) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: expected a parameter mapping", node.Line)

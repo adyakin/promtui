@@ -2,10 +2,30 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"runtime/debug"
 	"testing"
 )
+
+func TestSavedQueriesPath(t *testing.T) {
+	configDir, dataDir := defaultDirs(t.TempDir())
+	current, legacy := filepath.Join(configDir, "queries.yaml"), filepath.Join(dataDir, "queries.yaml")
+	if got := savedQueriesPath(configDir, dataDir); got != current {
+		t.Fatalf("new collection path = %q, want %q", got, current)
+	}
+	for _, path := range []string{legacy, current} {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("queries: []\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if got := savedQueriesPath(configDir, dataDir); got != path {
+			t.Fatalf("existing collection path = %q, want %q", got, path)
+		}
+	}
+}
 
 func TestDefaultDirs(t *testing.T) {
 	home := filepath.Join("home", "test")

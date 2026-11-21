@@ -72,3 +72,16 @@ func TestDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultYAMLRoundTrip(t *testing.T) {
+	for _, value := range []string{"", "true", "  a\nb", "a\r\nb", "\u0085\u2028\u2029", "\t雪 ${other}"} {
+		raw, err := yaml.Marshal(Parameter{Name: "a", Default: &value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var p Parameter
+		if err := yaml.Unmarshal(raw, &p); err != nil || p.Default == nil || *p.Default != value {
+			t.Fatalf("default %q did not round trip: %q -> %+v (%v)", value, raw, p, err)
+		}
+	}
+}

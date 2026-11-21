@@ -361,6 +361,15 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "Copied"
 		}
+	case parameterClipboard:
+		if d := m.parameterDialog; d != nil && d == v.dialog && d.row == v.row {
+			if v.err != nil {
+				d.err = fmt.Errorf("clipboard: %w", v.err)
+				return m, nil
+			}
+			return m, d.edit(tea.PasteMsg{Content: v.content})
+		}
+		return m, nil
 	case tea.PasteMsg:
 		if m.pickingConnection {
 			return m, nil

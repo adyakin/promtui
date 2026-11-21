@@ -6,9 +6,9 @@ A keyboard-driven terminal UI for **Prometheus** and **VictoriaMetrics**. Run Pr
 
 ## Features
 
-- Multiline PromQL editor with syntax highlighting, completion, history, and saved queries
+- Multiline PromQL editor with syntax highlighting, completion, history, and parameterized saved queries
 - Instant-query tables and range-query graphs with series filtering
-- Alertmanager alert browser with filtering and sorting
+- Alertmanager alert browser with sorting, fuzzy search, and reusable label filters
 - Alertmanager silence management with matcher previews
 - Read-only Alertmanager routing tree and receiver explorer
 - Prometheus and vmagent scrape-target inspection
@@ -37,6 +37,8 @@ Press **i** to edit a query and **Ctrl+Enter** or **Ctrl+G** to run it. Use **g*
 
 To investigate an alert, open **[1] Alerts**, select an alert, and press **Enter** to open its details. Press **p** to load the expression from its Prometheus generator link into the PromQL editor. This replaces the current draft without running the query or changing the connection, time range, or results. Review or edit it, then press **Ctrl+Enter** to run it. VictoriaMetrics/vmalert links are not supported.
 
+Press **Ctrl+O** in PromQL or Alerts to browse that tab's saved items. Both support reusable parameters with optional defaults. See [Saved queries and alert filters](docs/saved-items.md) for shortcuts and copyable YAML examples.
+
 To silence an alert, press **s** in Alert Details, or open **2 Silences** and press **n** to start from scratch. See [Managing silences](docs/silences.md) for preview, scheduling, editing, and expiration.
 
 To see which receiver a route uses, open **4 Routing** and press **Enter** on a route. Press **v** to browse receivers and jump to routes that reference them. See [Exploring routes and receivers](docs/routing.md).
@@ -61,7 +63,8 @@ connections:
 Default paths on macOS and Linux:
 
 - **Config:** `~/.config/promtui/config.yaml`, then `config.yml`, then `config.toml`
-- **Saved queries:** `~/.local/share/promtui/queries.yaml`
+- **Saved queries:** `~/.config/promtui/queries.yaml` (falls back to an existing `~/.local/share/promtui/queries.yaml`)
+- **Saved alert filters:** `~/.config/promtui/alerts.yaml`
 - **History:** `~/.local/share/promtui/history.jsonl`
 
 Start with the full [`config.example.yaml`](config.example.yaml), or pass any YAML or TOML config with `-config PATH`. See the [configuration reference](docs/configuration.md) for TLS options, target sources, and per-connection Alerts and Targets columns and search.

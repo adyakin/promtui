@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/parameters"
 	"promtui/internal/ui"
@@ -24,6 +25,13 @@ type parameterDialog struct {
 	row    int
 	err    error
 	apply  func(parameters.Values) (tea.Cmd, error)
+}
+
+type parameterClipboard struct {
+	dialog  *parameterDialog
+	row     int
+	content string
+	err     error
 }
 
 // The caller keeps its browser open underneath. Cancel simply removes the
@@ -55,7 +63,9 @@ func (d *parameterDialog) resize(width int) {
 	}
 	width = min(60, width-2)
 	for i := range d.fields {
-		d.fields[i].input.SetWidth(max(1, width-width/3-7))
+		input := &d.fields[i].input
+		input.SetWidth(max(1, width-width/3-7))
+		input.SetCursor(input.Position())
 	}
 }
 
@@ -64,11 +74,22 @@ func (d *parameterDialog) edit(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 	f := &d.fields[d.row]
+	if paste, ok := msg.(tea.PasteMsg); ok {
+		// A single-line input cannot faithfully represent these characters.
+		// Do not silently collapse them to spaces before raw substitution.
+		probe := textinput.New()
+		probe.SetValue(paste.Content)
+		if probe.Value() != paste.Content {
+			d.err = fmt.Errorf("paste a single-line value for %s", f.definition.Name)
+			return nil
+		}
+	}
 	before := f.input.Value()
 	var cmd tea.Cmd
 	f.input, cmd = f.input.Update(msg)
 	if f.input.Value() != before {
 		f.edited, d.err = true, nil
+		f.input.Placeholder = "(empty)"
 	}
 	return cmd
 }
@@ -99,10 +120,16 @@ func (m *Model) parameterKey(k tea.KeyPressMsg) tea.Cmd {
 		if len(d.fields) != 0 {
 			f := &d.fields[d.row]
 			f.input.SetValue("")
-			f.input.Placeholder = ""
+			f.input.Placeholder = "(empty)"
 			f.edited, d.err = true, nil
 		}
-	case "ctrl+enter":
+	case "ctrl+v":
+		row := d.row
+		return func() tea.Msg {
+			value, err := clipboard.ReadAll()
+			return parameterClipboard{d, row, value, err}
+		}
+	case "ctrl+enter", "ctrl+g":
 		values := make(parameters.Values, len(d.fields))
 		for i, f := range d.fields {
 			p := f.definition
@@ -137,7 +164,11 @@ func (m *Model) parameterLayer() (*lipgloss.Layer, *tea.Cursor) {
 	var errors []string
 	if d.err != nil {
 		errors = strings.Split(ansi.Hardwrap(ui.Plain(d.err.Error()), width-4, false), "\n")
-		errors = errors[:min(len(errors), 3, maxRows-2)]
+		limit := min(len(errors), 3, maxRows-2)
+		if limit < len(errors) {
+			errors[limit-1] = ansi.Truncate(errors[limit-1], width-5, "") + "…"
+		}
+		errors = errors[:limit]
 	}
 	room := maxRows - len(errors)
 	first := dialogStart(d.row, len(d.fields), room)
