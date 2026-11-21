@@ -101,6 +101,7 @@ func (m *Model) resize(w, h int) {
 	m.targets.input.SetWidth(max(1, w-13))
 	m.resultFilter.input.SetWidth(max(1, w-13))
 	m.sizeSavedInput()
+	m.savedTemplate.resize(w, h)
 	m.parameterDialog.resize(w)
 	m.sizeAlertSavedInputs()
 	m.sizeSilenceInputs()
@@ -633,6 +634,10 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 	}
 	if !m.pickingConnection && m.panel&savedQueryKeys != 0 {
 		dialog, cursor := m.savedQueryLayer()
+		return lipgloss.NewCompositor(lipgloss.NewLayer(base), dialog).Render(), cursor
+	}
+	if !m.pickingConnection && m.panel == savedTemplateKeys {
+		dialog, cursor := m.savedTemplateLayer()
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), dialog).Render(), cursor
 	}
 	if !m.pickingConnection && m.panel&dialogKeys != 0 {

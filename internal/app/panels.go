@@ -25,9 +25,10 @@ type panels struct {
 	labelFields               []labelField
 	isolated                  []bool
 	isolatedIndex             int
+	savedTemplate             savedTemplateState
 }
 
-const dialogKeys = rangeKeys | seriesKeys | labelKeys | savedQueryKeys | queryErrorKeys
+const dialogKeys = rangeKeys | seriesKeys | labelKeys | savedQueryKeys | savedTemplateKeys | queryErrorKeys
 
 func (m *Model) openPanel(scope keyScope) {
 	m.dismiss()
