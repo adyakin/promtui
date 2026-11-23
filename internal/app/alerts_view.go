@@ -193,19 +193,40 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	if a.err == nil && len(a.visible) > 0 {
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
 	}
-	heading := "Alerts"
-	if view := m.alertViewName(); view != "" {
-		heading += " | View: " + ui.Plain(view)
-	}
-	if filter := a.structured.description(); filter != "" {
-		heading += " | " + ui.Plain(filter)
-	}
+	heading := m.alertsHeading()
 	base := strings.Join([]string{m.header(alertsTab), frame(heading, meta, body, m.width, a.saved.mode == alertSavedClosed),
 		lipgloss.NewStyle().Width(m.width).Render(ansi.Truncate(" "+status, m.width, "…")), m.footer()}, "\n")
 	if (a.help || a.dialog != alertNoDialog) && m.silences.editor == nil {
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), m.alertDialogLayer(now)).Render(), nil
 	}
 	return base, cursor
+}
+
+func (m *Model) alertsHeading() string {
+	view := ui.Plain(m.alertViewName())
+	filter := ui.Plain(m.alerts.structured.description())
+	if view == "" {
+		if filter != "" {
+			return "Alerts | " + filter
+		}
+		return "Alerts"
+	}
+	heading := "Alerts | View: " + view
+	if filter == "" {
+		return heading
+	}
+	heading += " | " + filter
+	if ansi.StringWidth(heading) <= m.width-7 {
+		return heading
+	}
+	// At small widths, keep both names visible rather than clipping the filter
+	// after a view name. Prefer the saved name over its parameter summary.
+	if name := m.alerts.structured.name; name != "" {
+		filter = ui.Plain(name)
+	}
+	room := max(2, m.width-7-len("Alerts |  | "))
+	viewWidth := min(ansi.StringWidth(view), room-min(room/2, ansi.StringWidth(filter)))
+	return "Alerts | " + ansi.Truncate(view, viewWidth, "…") + " | " + ansi.Truncate(filter, room-viewWidth, "…")
 }
 
 func alertSeverityTint(severity string) color.Color {

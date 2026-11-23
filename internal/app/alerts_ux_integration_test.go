@@ -90,6 +90,10 @@ connections:
 	}
 	savedText(t, m.screen(), "Expiry")
 	savedText(t, m.screen(), "5 days")
+	m.resize(36, 13)
+	savedText(t, m.screen(), "Alerts | certificates | West")
+	savedText(t, m.screen(), "5 days")
+	m.resize(110, 24)
 	press(m, tea.KeyEnter, tea.KeyEsc, 'd')
 	if m.alertViewName() != "certificates" {
 		t.Fatal("details or lowercase d changed the view")
