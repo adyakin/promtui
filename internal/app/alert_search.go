@@ -90,10 +90,14 @@ func (a *alertsState) searchSuggestionKey(key string) bool {
 	return true
 }
 
+func (m *Model) alertSuggestionsFit() bool {
+	return m.width >= minWidth && m.height >= minHeight
+}
+
 func (m *Model) alertSuggestionsLayer() *lipgloss.Layer {
 	a := &m.alerts
 	s := &a.suggestions
-	if !a.input.Focused() || len(s.matches) == 0 || m.width < minWidth || m.height < minHeight {
+	if !a.input.Focused() || len(s.matches) == 0 || !m.alertSuggestionsFit() {
 		return nil
 	}
 	const x, y = 3, 4 // Directly below the input at screen row 3.

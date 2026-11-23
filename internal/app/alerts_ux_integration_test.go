@@ -154,4 +154,13 @@ func TestAlertsAutocompleteAppliesFuzzyTextOnlyOnExplicitSelection(t *testing.T)
 	if m.alerts.filter != "CertCheck" || len(m.alerts.visible) != 2 || m.alertSuggestionsLayer() != nil {
 		t.Fatal("Escape did not restore the prior search results")
 	}
+	press(m, '/')
+	savedCtrl(m, 'u')
+	savedPaste(m, "cert")
+	press(m, tea.KeyDown)
+	m.resize(minWidth-1, minHeight)
+	press(m, tea.KeyEnter)
+	if m.alerts.filter != "cert" || len(m.alerts.visible) != 3 {
+		t.Fatal("Enter applied a suggestion hidden by resizing")
+	}
 }

@@ -68,6 +68,7 @@ type alertsState struct {
 	inhibition         alertInhibitionSnapshot
 	detailInhibition   alertInhibitionSnapshot
 	detailRelations    alertRelations
+	detailWrap         alertDetailWrap
 	detailTrail        []alertDetailVisit
 	relatedRow         int
 
@@ -91,7 +92,7 @@ func newAlertsState(view config.TableView) alertsState {
 	}
 	input.CharLimit = 4096
 	input.SetVirtualCursor(false)
-	return alertsState{input: input, view: view, sort: sortAlertDefault, sorts: viewSorts(config.AlertsView, defaultAlertSorts, view.Columns)}
+	return alertsState{input: input, view: view, sort: sortAlertDefault, sorts: alertViewSorts(view.Columns)}
 }
 
 func (a *alertsState) currentFilter() string {
@@ -307,7 +308,9 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 		switch key {
 		case "enter":
 			before := a.input.Value()
-			a.searchSuggestionKey(key)
+			if m.alertSuggestionsFit() {
+				a.searchSuggestionKey(key)
+			}
 			if a.input.Value() != before {
 				a.rebuild(a.selection(), a.row, time.Now())
 			}
@@ -317,7 +320,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 			a.input.Blur()
 			a.rebuild(a.filterAnchor, a.filterRow, time.Now())
 		default:
-			if a.searchSuggestionKey(key) {
+			if m.alertSuggestionsFit() && a.searchSuggestionKey(key) {
 				return nil
 			}
 			return a.edit(k)

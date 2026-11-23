@@ -178,7 +178,10 @@ Each `source` is a built-in Alerts field, `labels.<name>`, or
 The table sizes unspecified columns automatically and can truncate values on
 narrow terminals. `extract` takes a Go regular expression with exactly one
 capture group; a missing value or non-match displays `—`. Views change only
-the displayed columns, not the connection's `alerts.search` fields.
+the displayed columns, not the connection's `alerts.search` fields. Sorting
+an extracted column uses the raw source value, not the displayed capture.
+On narrow terminals, `…` at the end of the heading row means columns were
+omitted.
 
 You can also put `*.yaml` files under `alert_views.d/` next to the active main
 config (normally `~/.config/promtui/alert_views.d/`). Each external file starts

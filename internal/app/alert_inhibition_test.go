@@ -16,6 +16,26 @@ import (
 	"promtui/internal/config"
 )
 
+func TestAlertDetailsWrapCache(t *testing.T) {
+	now := time.Now()
+	first := newAlertRow("test", testAlert("one", "First", "critical", "active", now))
+	a := newAlertsState(config.TableView{})
+	a.openAlertDetails(first)
+	a.detailRelations.lines = []string{"Inhibition", strings.Repeat("a long relationship ", 10)}
+	rows := a.wrappedAlertDetails(now, 60)
+	next := a.wrappedAlertDetails(now.Add(time.Second), 60)
+	if &rows[0] != &next[0] || next[a.detailWrap.durationAt] != "Duration: 1s" {
+		t.Fatal("duration tick should update the duration without rewrapping the details")
+	}
+	if narrower := a.wrappedAlertDetails(now, 24); len(narrower) <= len(next) {
+		t.Fatal("resize did not rewrap the details")
+	}
+	a.openAlertDetails(newAlertRow("test", testAlert("two", "Second", "", "active", now)))
+	if got := a.wrappedAlertDetails(now, 24); got[1] != "Alert: Second" {
+		t.Fatalf("new alert reused previous wrapped details: %v", got)
+	}
+}
+
 func TestAlertInhibitionDetailsNavigation(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -48,13 +48,31 @@ func (m *Model) selectAlertView(name string) bool {
 	return true
 }
 
+func alertViewSorts(columns []config.Column) []viewSort {
+	sorts := viewSorts(config.AlertsView, defaultAlertSorts, columns)
+	for _, column := range columns {
+		if column.Extract == nil {
+			continue
+		}
+		// Sorting is by the source, not its rendered extract. This stays
+		// meaningful across view changes and when several columns share it.
+		for i := range sorts {
+			if sorts[i].field == column.Field {
+				sorts[i].title = column.Field + " (raw)"
+				break
+			}
+		}
+	}
+	return sorts
+}
+
 func (a *alertsState) setViewColumns(columns []config.Column) {
 	// The named view only replaces columns, not search or the existing
 	// filtered/sorted rows and selection.
 	sortTitle := viewSortTitle(a.sorts, a.sort)
 	a.view.Columns = columns
 	a.cachedTable = alertTable{}
-	a.sorts = viewSorts(config.AlertsView, defaultAlertSorts, columns)
+	a.sorts = alertViewSorts(columns)
 	if a.sort != "" && !slices.ContainsFunc(a.sorts, func(s viewSort) bool { return s.field == a.sort }) {
 		// Keep the current sort usable even if its column isn't displayed.
 		if sortTitle == "" {

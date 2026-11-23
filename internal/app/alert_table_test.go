@@ -124,6 +124,9 @@ func TestAlertTableRendersExtractedValuesWithoutChangingSortOrSearch(t *testing.
 	if compareAlertField(a.rows[0], a.rows[1], "annotations.summary", now) >= 0 {
 		t.Error("sort should compare raw annotations rather than extracts")
 	}
+	if got := viewSortTitle(a.sorts, "annotations.summary"); got != "annotations.summary (raw)" {
+		t.Errorf("sort heading %q should distinguish the source from the extract", got)
+	}
 }
 
 func TestAlertTableNarrowWidths(t *testing.T) {
@@ -148,6 +151,15 @@ func TestAlertTableNarrowWidths(t *testing.T) {
 	}
 	for range 12 {
 		a.view.Columns = append(a.view.Columns, config.Column{Field: "labels.alertname", Title: "多字 Heading"})
+	}
+	dense := a.tableLayout(22, now)
+	if !dense.clipped || len(dense.cols) >= len(a.view.Columns) || !strings.HasSuffix(ansi.Strip(dense.header()), " …") {
+		t.Fatal("dense table did not indicate omitted columns")
+	}
+	for _, col := range dense.cols {
+		if col.width < 3 {
+			t.Errorf("retained column width = %d, want at least 3", col.width)
+		}
 	}
 	for w := 0; w <= 42; w++ {
 		table := a.tableLayout(w, now)

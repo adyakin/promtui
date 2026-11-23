@@ -37,6 +37,7 @@ func (a *alertsState) openAlertDetails(row alertRow) {
 	a.dialog, a.detail, a.offset, a.detailStatus = alertDetails, row, 0, ""
 	a.relatedRow = 0
 	a.detailRelations = a.detailInhibition.relations(row)
+	a.detailWrap = alertDetailWrap{}
 }
 
 func (a *alertsState) closeAlertDetails() {
@@ -44,6 +45,7 @@ func (a *alertsState) closeAlertDetails() {
 	a.detailTrail = nil
 	a.detailInhibition = alertInhibitionSnapshot{}
 	a.detailRelations = alertRelations{}
+	a.detailWrap = alertDetailWrap{}
 }
 
 func (a *alertsState) followRelatedAlert() {
@@ -61,6 +63,7 @@ func (a *alertsState) backToAlert() bool {
 	a.detailTrail[i] = alertDetailVisit{}
 	a.detailTrail = a.detailTrail[:i]
 	a.detail, a.detailRelations, a.offset, a.relatedRow, a.detailStatus = v.row, v.relations, v.offset, v.relatedRow, v.status
+	a.detailWrap = alertDetailWrap{}
 	return true
 }
 

@@ -259,14 +259,18 @@ func alertTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05 UTC")
 }
 
-func alertDetailLines(a alertRow, now time.Time, inhibition []string) []string {
-	lines := []string{
+func alertDetailOverview(a alertRow) []string {
+	return []string{
 		"Overview",
 		"Alert: " + alertValue(a.Labels["alertname"]),
 		"Severity: " + alertValue(a.Labels["severity"]),
 		"State: " + a.state(),
 		"Active since: " + alertTime(a.StartsAt),
-		"Duration: " + alertDuration(a.StartsAt, now),
+	}
+}
+
+func alertDetailBody(a alertRow, inhibition []string) []string {
+	lines := []string{
 		"Last update: " + alertTime(a.UpdatedAt),
 	}
 	if value := a.Annotations["value"]; value != "" {
@@ -308,8 +312,37 @@ func alertDetailLines(a alertRow, now time.Time, inhibition []string) []string {
 	return lines
 }
 
+type alertDetailWrap struct {
+	width                   int
+	duration                string
+	durationAt, durationLen int
+	rows                    []string
+}
+
+func (a *alertsState) wrappedAlertDetails(now time.Time, width int) []string {
+	c := &a.detailWrap
+	duration := "Duration: " + alertDuration(a.detail.StartsAt, now)
+	if c.rows == nil || c.width != width {
+		rows := appendAlertDialogRows(nil, alertDetailOverview(a.detail), width)
+		at := len(rows)
+		rows = appendAlertDialogRows(rows, []string{duration}, width)
+		*c = alertDetailWrap{
+			width: width, duration: duration, durationAt: at, durationLen: len(rows) - at,
+			rows: appendAlertDialogRows(rows, alertDetailBody(a.detail, a.detailRelations.lines), width),
+		}
+	} else if c.duration != duration {
+		wrapped := appendAlertDialogRows(nil, []string{duration}, width)
+		start, end := c.durationAt, c.durationAt+c.durationLen
+		c.rows = slices.Replace(c.rows, start, end, wrapped...)
+		c.duration, c.durationLen = duration, len(wrapped)
+	}
+	return c.rows
+}
+
 func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, room int) {
 	a := &m.alerts
+	width = min(76, m.width-max(4, m.width/8))
+	rowLimit := max(0, m.height-max(7, m.height/3))
 	var lines []string
 	switch {
 	case a.help:
@@ -340,9 +373,10 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			}
 		}
 	case a.dialog == alertDetails:
-		name, lines = "Alert details", alertDetailLines(a.detail, now, a.detailRelations.lines)
+		rows = a.wrappedAlertDetails(now, width)
+		return "Alert details", rows, width, min(len(rows), rowLimit)
 	case a.dialog == alertRelated:
-		name = "Related alerts"
+		return "Related alerts", nil, width, m.alertRelatedRoom()
 	case a.dialog == alertStatusDialog:
 		name, lines = "Alerts status", []string{a.status()}
 		if a.err != nil {
@@ -354,11 +388,12 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			lines = append(lines, "Last successful refresh: "+alertTime(a.lastOK))
 		}
 	}
-	width = min(76, m.width-max(4, m.width/8))
-	if !a.help && a.dialog == alertRelated {
-		room = m.alertRelatedRoom()
-		return
-	}
+	rows = appendAlertDialogRows(nil, lines, width)
+	room = min(len(rows), rowLimit)
+	return
+}
+
+func appendAlertDialogRows(rows, lines []string, width int) []string {
 	for _, line := range lines {
 		for _, paragraph := range strings.Split(strings.ReplaceAll(line, "\r\n", "\n"), "\n") {
 			wrapped := strings.Split(ansi.Wrap(ui.Plain(paragraph), width-4, ""), "\n")
@@ -370,8 +405,7 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			rows = append(rows, wrapped...)
 		}
 	}
-	room = min(len(rows), m.height-max(7, m.height/3))
-	return
+	return rows
 }
 
 func (m *Model) scrollAlertDialog(key string) {

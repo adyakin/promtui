@@ -27,6 +27,7 @@ type alertTableColumn struct {
 
 type alertTable struct {
 	width, trailing int
+	clipped         bool
 	gap             string
 	cols            []alertTableColumn
 }
@@ -59,6 +60,15 @@ func (a *alertsState) tableLayout(width int, now time.Time) alertTable {
 			columns = []config.Column{defaults[0], defaults[2]}
 		}
 	}
+	if len(columns) > 1 && room < 4*len(columns)-1 {
+		// Preserve at least three cells per retained column and room for a
+		// separator. Mark omitted columns without squeezing every value to ….
+		if room >= 5 {
+			t.clipped = true
+			room -= 2
+		}
+		columns = columns[:min(len(columns), max(1, (room+1)/4))]
+	}
 	columns = columns[:min(len(columns), room)]
 	if len(columns) == 0 {
 		t.trailing = room
@@ -69,6 +79,13 @@ func (a *alertsState) tableLayout(width int, now time.Time) alertTable {
 	for i, column := range columns {
 		c := &t.cols[i]
 		*c = sizeAlertTableColumn(column, a.rows, now)
+		if t.clipped {
+			floor := 3
+			if c.Width > 0 {
+				floor = min(floor, c.Width)
+			}
+			c.minimum = max(c.minimum, floor)
+		}
 		if defaultView && width < 76 && column.Field == "state" && c.preferred > 11 {
 			c.preferred = 11
 		}
@@ -232,6 +249,9 @@ func (t alertTable) header() string {
 		line.WriteString(alertColumn(c.Title, c.width))
 	}
 	line.WriteString(strings.Repeat(" ", t.trailing))
+	if t.clipped {
+		line.WriteString(" …")
+	}
 	return title.Render(line.String())
 }
 
@@ -261,5 +281,8 @@ func (t alertTable) row(selected bool, row alertRow, now time.Time) string {
 		part.WriteString(text)
 	}
 	part.WriteString(strings.Repeat(" ", t.trailing))
+	if t.clipped {
+		part.WriteString("  ")
+	}
 	return renderStatusRow(t.width, selected, before.String(), cell, after.String(), tint)
 }
