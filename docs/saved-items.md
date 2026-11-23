@@ -78,9 +78,11 @@ previous filter in place and can be corrected without reopening the browser.
 
 Filters run locally against the Alerts list and stay active on refresh or
 connection switch. Applying one doesn't change the fuzzy-search text, sort
-order, or connection. The file stores only label matchers and parameter
-definitions, not UI state. No Alertmanager silence or other server-side state
-is created.
+order, or connection. The Alerts border shows `Search: <name>` when a saved
+filter is selected, and the `Filter:` line shows the `/` search text. Editing
+that text hides the saved name without deactivating its label matchers. The
+file stores only label matchers and parameter definitions, not UI state. No
+Alertmanager silence or other server-side state is created.
 
 For file-based setup, see the [README](../README.md#alerts-alertsyaml) and
 [`examples/alerts.yaml`](../examples/alerts.yaml).

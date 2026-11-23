@@ -71,6 +71,7 @@ type targetsState struct {
 	sort            string
 	sorts           []viewSort
 	filter, anchor  string
+	search          parsedSearch
 	anchorRow       int
 	input           textinput.Model
 	dialog          targetDialog
@@ -90,9 +91,9 @@ type targetsState struct {
 func newTargetsState(conn config.Connection) targetsState {
 	input := textinput.New()
 	input.Prompt = "  Filter: "
-	input.Placeholder = "health, source, labels, scrape fields"
+	input.Placeholder = "terms or field:value"
 	if conn.TargetsView.Search != nil {
-		input.Placeholder = "configured fields"
+		input.Placeholder = "configured fields or field:value"
 	}
 	input.CharLimit = 4096
 	input.SetVirtualCursor(false)
@@ -144,7 +145,7 @@ func (a *targetsState) selection() string {
 func (a *targetsState) moveTo(row int) { a.row = max(0, min(row, len(a.visible)-1)) }
 
 func (a *targetsState) rebuild(id string, row int) {
-	filter := newFuzzyFilter(a.currentFilter())
+	a.search.update(a.currentFilter())
 	health := targetHealthOrder[a.health]
 	clear(a.visible)
 	a.visible = a.visible[:0]
@@ -155,7 +156,7 @@ func (a *targetsState) rebuild(id string, row int) {
 		for j := range source.rows {
 			item := &source.rows[j]
 			if (item.health == health || health == targetAllActive && item.health != targetDropped) &&
-				a.matches(item, filter) {
+				a.search.matches(func(f fuzzyFilter) bool { return a.matches(item, f) }, item.searchField) {
 				a.visible = append(a.visible, item)
 			}
 		}

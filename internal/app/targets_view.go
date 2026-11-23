@@ -378,7 +378,7 @@ func (m *Model) targetTextDialog() (name string, rows []string, width, room int)
 	width, room = m.targetDialogSize()
 	name = "Targets help"
 	lines := []string{targetSelectHint + " target · PgUp/PgDn Page · Home/End First/last",
-		targetDetailsHint + " · " + targetFilterHint + " (Enter apply, Esc cancel)", targetSourcesHint + " · " + targetHealthHint + " · " + targetSortHint,
+		targetDetailsHint + " · " + targetFilterHint + " (terms or field:value; Enter apply, Esc cancel)", targetSourcesHint + " · " + targetHealthHint + " · " + targetSortHint,
 		targetDroppedHint + "/active · " + targetRefreshHint + " (auto every 30s)", "Alt+S: show request status",
 		"0–5 Tabs (Alt+0–5 while typing) · c Connections · q Quit"}
 	if a.dialog == targetDetails {

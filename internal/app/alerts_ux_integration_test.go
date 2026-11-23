@@ -82,6 +82,7 @@ connections:
 	if m.alertViewName() != "general" || m.alerts.structured.name != "West" || len(m.alerts.visible) != 1 {
 		t.Fatal("opening the filter changed view or failed to apply the filter")
 	}
+	savedText(t, m.screen(), "Alerts | View: general | Search: West")
 	savedCtrl(m, 'o')
 	press(m, '/', 'c', 'e', 'r', 't', tea.KeyEnter, tea.KeyEnter)
 	if m.alertViewName() != "certificates" || m.alerts.structured.name != "West" ||
@@ -91,7 +92,8 @@ connections:
 	savedText(t, m.screen(), "Expiry")
 	savedText(t, m.screen(), "5 days")
 	m.resize(36, 13)
-	savedText(t, m.screen(), "Alerts | certificates | West")
+	savedText(t, m.screen(), "Alerts | cert")
+	savedText(t, m.screen(), "Search: W")
 	savedText(t, m.screen(), "5 days")
 	m.resize(110, 24)
 	press(m, tea.KeyEnter, tea.KeyEsc, 'd')

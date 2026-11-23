@@ -52,6 +52,7 @@ type alertsState struct {
 	sort          string
 	sorts         []viewSort
 	filter        string
+	search        parsedSearch
 	input         textinput.Model
 	suggestions   alertSearchSuggestions
 	filterAnchor  string
@@ -86,9 +87,9 @@ type alertsState struct {
 func newAlertsState(view config.TableView) alertsState {
 	input := textinput.New()
 	input.Prompt = "  Filter: "
-	input.Placeholder = "state, severity, alert, instance, duration"
+	input.Placeholder = "terms or field:value"
 	if view.Search != nil {
-		input.Placeholder = "configured fields"
+		input.Placeholder = "configured fields or field:value"
 	}
 	input.CharLimit = 4096
 	input.SetVirtualCursor(false)
@@ -110,10 +111,18 @@ func (a *alertsState) selection() string {
 }
 
 func (a *alertsState) rebuild(id string, row int, now time.Time) {
-	filter := newFuzzyFilter(a.currentFilter())
+	a.search.update(a.currentFilter())
+	// Preserve the default one-term scope. In a compound search, a bare
+	// term can also supply context from a label or annotation.
+	searchExtra := a.view.Search == nil && len(a.search.terms) > 1
 	a.visible = a.visible[:0]
 	for _, item := range a.rows {
-		if (a.structured.match != nil && !a.structured.match(item.Labels)) || !a.matches(item, filter, now) {
+		if (a.structured.match != nil && !a.structured.match(item.Labels)) ||
+			!a.search.matches(func(f fuzzyFilter) bool {
+				return a.matches(item, f, now) || searchExtra &&
+					a.matchAlertValues(item, now, func(value string) bool { return f.matches(value) })
+			},
+				func(field string) string { return item.searchField(field, now) }) {
 			continue
 		}
 		a.visible = append(a.visible, item)
@@ -136,11 +145,30 @@ func (a *alertsState) rebuild(id string, row int, now time.Time) {
 }
 
 func (a *alertsState) matches(row alertRow, filter fuzzyFilter, now time.Time) bool {
-	fields := a.view.Search
-	if fields != nil {
-		return matchesFields(filter, fields, func(field string) string { return row.field(field, now) })
+	if a.view.Search != nil {
+		return matchesFields(filter, a.view.Search, func(field string) string { return row.field(field, now) })
 	}
 	return matchesFields(filter, defaultAlertFields[:], func(field string) string { return alertValue(row.field(field, now)) })
+}
+
+// Non-column values are also available for suggestions in multi-term searches.
+func (a *alertsState) matchAlertValues(row alertRow, now time.Time, match func(string) bool) bool {
+	if a.view.Search != nil {
+		for _, field := range a.view.Search {
+			if match(row.field(field, now)) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, values := range []map[string]string{row.Labels, row.Annotations} {
+		for _, value := range values {
+			if match(value) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (a *alertsState) moveTo(row int) { a.row = max(0, min(row, len(a.visible)-1)) }
@@ -267,11 +295,13 @@ func (m *Model) onAlertsCompleted(v alertsCompleted, now time.Time) tea.Cmd {
 }
 
 func (a *alertsState) edit(msg tea.Msg) tea.Cmd {
-	before := a.input.Value()
+	before, pos := a.input.Value(), a.input.Position()
 	input, cmd := a.input.Update(msg)
 	a.input = input
 	if a.input.Value() != before {
 		a.rebuild(a.selection(), a.row, time.Now())
+	}
+	if a.input.Value() != before || a.input.Position() != pos {
 		a.refreshSearchSuggestions()
 	}
 	return cmd
@@ -313,6 +343,9 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 			}
 			if a.input.Value() != before {
 				a.rebuild(a.selection(), a.row, time.Now())
+			}
+			if a.structured.name != "" && a.filter != a.input.Value() {
+				a.structured.searchEdited = true
 			}
 			a.filter = a.input.Value()
 			a.input.Blur()

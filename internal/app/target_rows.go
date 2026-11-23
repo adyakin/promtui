@@ -120,35 +120,60 @@ func (r *targetRow) field(field string) string {
 	if label, ok := config.LabelName(field); ok {
 		return r.Labels[label]
 	}
-	switch field {
-	case "health":
-		return targetHealthNames[r.health]
-	case "source":
-		return r.source
-	case "job":
-		return r.job
-	case "instance":
-		return r.instance
-	case "last_scrape":
-		return r.LastScrape
-	case "duration":
-		if r.LastScrapeDuration != nil {
-			return targetDuration(r.LastScrapeDuration)
-		}
-	case "scrape_url":
-		return r.ScrapeURL
-	case "scrape_pool":
-		return r.ScrapePool
-	case "global_url":
-		return r.GlobalURL
-	case "last_error":
-		return r.LastError
-	case "scrape_interval":
-		return r.ScrapeInterval
-	case "scrape_timeout":
-		return r.ScrapeTimeout
+	value, _ := r.builtInField(field)
+	return value
+}
+
+func (r *targetRow) searchField(field string) string {
+	if label, ok := config.LabelName(field); ok {
+		return r.Labels[label]
+	}
+	if strings.HasPrefix(field, "annotations.") {
+		return ""
+	}
+	if value, ok := r.builtInField(field); ok {
+		return value
+	}
+	if value, ok := r.Labels[field]; ok {
+		return value
+	}
+	if r.health == targetDropped {
+		return r.DiscoveredLabels[field]
 	}
 	return ""
+}
+
+func (r *targetRow) builtInField(field string) (string, bool) {
+	switch field {
+	case "health":
+		return targetHealthNames[r.health], true
+	case "source":
+		return r.source, true
+	case "job":
+		return r.job, true
+	case "instance":
+		return r.instance, true
+	case "last_scrape", "lastScrape":
+		return r.LastScrape, true
+	case "duration", "lastScrapeDuration":
+		if r.LastScrapeDuration != nil {
+			return targetDuration(r.LastScrapeDuration), true
+		}
+		return "", true
+	case "scrape_url", "scrapeUrl":
+		return r.ScrapeURL, true
+	case "scrape_pool", "scrapePool":
+		return r.ScrapePool, true
+	case "global_url", "globalUrl":
+		return r.GlobalURL, true
+	case "last_error", "lastError":
+		return r.LastError, true
+	case "scrape_interval", "scrapeInterval":
+		return r.ScrapeInterval, true
+	case "scrape_timeout", "scrapeTimeout":
+		return r.ScrapeTimeout, true
+	}
+	return "", false
 }
 
 func (r *targetRow) displayField(field string, now time.Time) string {

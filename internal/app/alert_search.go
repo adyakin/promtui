@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
+	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -15,6 +18,7 @@ const alertSuggestionLimit = 6
 type alertSearchSuggestions struct {
 	names, matches []string
 	selected       int // One-based; zero means no explicit selection.
+	fieldValues    bool
 }
 
 func (s *alertSearchSuggestions) selectedName() string {
@@ -46,20 +50,53 @@ func (a *alertsState) refreshAlertNames() {
 	}
 }
 
-// refreshSearchSuggestions starts a fresh match after opening or editing search.
+// refreshSearchSuggestions completes the value of the term at the cursor.
 func (a *alertsState) refreshSearchSuggestions() {
 	s := &a.suggestions
 	s.matches = s.matches[:0]
 	s.selected = 0
-	filter := newFuzzyFilter(a.input.Value())
-	if len(filter) == 0 {
+	query := []rune(a.input.Value())
+	token, ok := activeSearchToken(query, a.input.Position())
+	if !ok {
 		return
 	}
-	for _, name := range s.names {
-		if filter.matches(name) {
-			s.matches = append(s.matches, name)
+	filter := newFuzzyFilter(token.value)
+	multi := slices.ContainsFunc(query[:token.start], func(r rune) bool { return !unicode.IsSpace(r) }) ||
+		slices.ContainsFunc(query[token.end:], func(r rune) bool { return !unicode.IsSpace(r) })
+	s.fieldValues = token.field != "" || multi
+	if token.field == "" && len(filter) == 0 {
+		return
+	}
+	if !s.fieldValues {
+		for _, name := range s.names {
+			if filter.matches(name) {
+				s.matches = append(s.matches, name)
+			}
+		}
+		return
+	}
+	now := time.Now()
+	values := make(map[string]struct{})
+	add := func(value string) bool {
+		if value != "" && filter.matches(value) {
+			values[value] = struct{}{}
+		}
+		return false // Visit all candidate values.
+	}
+	if token.field == "" {
+		for _, name := range s.names {
+			add(name)
 		}
 	}
+	for _, row := range a.rows {
+		if token.field != "" {
+			add(row.searchField(token.field, now))
+		} else {
+			a.matchAlertValues(row, now, add)
+		}
+	}
+	s.matches = slices.AppendSeq(s.matches, maps.Keys(values))
+	slices.Sort(s.matches)
 }
 
 // searchSuggestionKey reports whether it handled navigation or filled the
@@ -80,9 +117,16 @@ func (a *alertsState) searchSuggestionKey(key string) bool {
 		s.selected = min(len(s.matches), s.selected+1)
 	case "enter":
 		if name := s.selectedName(); name != "" {
-			a.input.SetValue(name)
-			a.input.CursorEnd()
-			return true
+			query := []rune(a.input.Value())
+			if token, ok := activeSearchToken(query, a.input.Position()); ok {
+				value := quoteSearchValue(name)
+				text := string(query[:token.valueAt]) + value + string(query[token.end:])
+				if a.input.CharLimit <= 0 || utf8.RuneCountInString(text) <= a.input.CharLimit {
+					a.input.SetValue(text)
+					a.input.SetCursor(token.valueAt + utf8.RuneCountInString(value))
+					return true
+				}
+			}
 		}
 		return false
 	default:
@@ -115,7 +159,11 @@ func (m *Model) alertSuggestionsLayer() *lipgloss.Layer {
 		rows[i] = dialogRow(ui.Plain(name), "", width-2, first+i+1 == s.selected)
 	}
 	m.mouseDialog(x, y, width, room, m.paneKey)
-	m.mouseRows(x+1, y+1, width-2, first, first+room, "alert names",
+	heading := "Alert names"
+	if s.fieldValues {
+		heading = "Search values"
+	}
+	m.mouseRows(x+1, y+1, width-2, first, first+room, "alert search suggestions",
 		func(i int) string { return s.matches[i] }, func(i int) tea.Cmd { s.selected = i + 1; return nil }, nil)
-	return lipgloss.NewLayer(renderFrame("Alert names", meta, rows, width, true, dialogSurface)).X(x).Y(y).Z(1)
+	return lipgloss.NewLayer(renderFrame(heading, meta, rows, width, true, dialogSurface)).X(x).Y(y).Z(1)
 }

@@ -107,12 +107,29 @@ is the literal name, including any dots. For Targets this reads the final `label
 map, not discovery metadata. An unavailable label displays `—` and contributes
 no search text. Labels don't have to exist when PromTUI loads the config.
 
-`/` still matches characters in order, case-insensitively, within a single
-field. With a `search` list it only searches those values, including hidden
-fields if listed. Without it, Alerts searches state, severity, alert name,
-instance, and duration. Targets retains its default search across health,
-source, scrape fields, and final and discovered labels. An explicitly
-configured Targets `last_scrape` displays the age but searches the timestamp.
+In Alerts and Targets, `/` starts a local search. Separate terms with spaces:
+every term must match the same row, but terms can match different fields.
+Each term matches characters in order, case-insensitively, as before. Double
+quotes keep spaces inside one term (e.g. `"connection refused"`).
+
+Use `field:value` to search a specific field, e.g. `severity:critical`,
+`job:node-exporter health:down`, or `scrapeUrl:metrics`. Arbitrary labels can
+be searched by name, or with `labels.<name>` to explicitly use the label map
+instead of a built-in field with the same name. In Alerts, use
+`annotations.summary:"connection refused"` to search the summary. Label and
+annotation keys are case-sensitive; missing fields don't match. Quote a
+literal such as `"localhost:9090"` to avoid interpreting it as a field lookup.
+
+The `search` list limits unqualified terms to the listed fields, including
+hidden fields. Without it, a single unqualified Alerts term searches state,
+severity, alert name, instance, and duration as before; compound searches also
+search label and annotation values. Targets searches health, source, scrape
+fields, and final and discovered labels by default. An explicitly configured
+Targets `last_scrape` displays the age but searches the timestamp.
+
+In Alerts, **↑/↓** selects a suggestion for the term at the cursor.
+**Enter** applies the typed search or replaces just that term's value if a
+suggestion is selected. Alerts and Targets keep separate search text.
 
 Without `columns`, Alerts shows State, Severity, Alert, Instance, and Duration;
 Targets shows Health, Instance, Job, Source, Last scrape, and Duration. On
