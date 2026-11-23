@@ -89,6 +89,9 @@ func (a alertRow) field(field string, now time.Time) string {
 	if label, ok := config.LabelName(field); ok {
 		return a.Labels[label]
 	}
+	if annotation, ok := strings.CutPrefix(field, "annotations."); ok {
+		return a.Annotations[annotation]
+	}
 	switch field {
 	case "state":
 		return a.state()
@@ -98,6 +101,18 @@ func (a alertRow) field(field string, now time.Time) string {
 		if !a.StartsAt.IsZero() {
 			return alertDuration(a.StartsAt, now)
 		}
+	}
+	return ""
+}
+
+// Extraction applies only to displayed cells, not to sorting or search.
+func (a alertRow) columnValue(column config.Column, now time.Time) string {
+	value := a.field(column.Field, now)
+	if column.Extract == nil || value == "" {
+		return value
+	}
+	if match := column.Extract.FindStringSubmatch(value); len(match) > 1 {
+		return match[1]
 	}
 	return ""
 }
