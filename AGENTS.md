@@ -7,6 +7,7 @@
 
 ## Development
 - use feature branches and worktrees for new feature.
+- merge commit message should include all info about new features/changes
 
 ## Go checks
 
