@@ -367,7 +367,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 		return m.openAlertMatcherEditor()
 	case "ctrl+o", "ctrl+s":
 		return m.openAlertFilters(key == "ctrl+s")
-	case "D":
+	case "D", "shift+d":
 		m.resetAlertView()
 		return nil
 	case "x":
