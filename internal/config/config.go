@@ -18,6 +18,7 @@ type Connection struct {
 	Targets            []TargetSource
 	VMAlert            []RuleSource
 	Alerts             TableView
+	AlertDefaultView   string
 	TargetsView        TableView
 }
 
@@ -61,6 +62,7 @@ type settings struct {
 type Config struct {
 	settings
 	Connections []Connection
+	AlertViews  map[string]TableView
 }
 
 type rawConnection struct {

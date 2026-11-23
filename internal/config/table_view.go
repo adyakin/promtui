@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -14,8 +15,11 @@ type TableView struct {
 }
 
 type Column struct {
-	Field string
-	Title string
+	Field   string
+	Title   string
+	Width   int
+	Weight  int
+	Extract *regexp.Regexp
 }
 
 type ViewKind int
