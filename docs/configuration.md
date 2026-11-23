@@ -37,22 +37,24 @@ setting does not change the in-app status or error messages.
 ## Scrape target sources
 
 The Targets tab uses the connection `url` by default. If that URL only serves
-queries, such as a VictoriaMetrics `vmselect` endpoint, set `targets` on the
+queries, such as a VictoriaMetrics `vmselect` endpoint, set `vmagent` on the
 YAML connection to a nonempty list of named Prometheus or vmagent base URLs:
 
 ```yaml
 connections:
   cluster:
     url: http://vmselect:8481/select/0/prometheus
-    targets:
+    vmagent:
       - {name: east, url: "https://monitoring.example.org/vmagent-east"}
       - {name: west, url: "https://monitoring.example.org/vmagent-west"}
 ```
 
 Names must be unique within a connection. Each source uses the same HTTP(S)
 base URL rules, including support for reverse-proxy path prefixes. Configuring
-`targets` replaces the fallback, rather than adding to it. Existing TOML
-configurations continue to use the connection URL for Targets.
+`vmagent` replaces the fallback, rather than adding to it. The old YAML key
+`targets` is still accepted as an alias, but do not set both on the same
+connection. Existing TOML configurations continue to use the connection URL
+for Targets.
 
 ## Rule sources
 
@@ -66,7 +68,7 @@ request timeout. See [Rules Explorer](rules.md) for an example.
 
 In YAML, each connection can set `alerts.columns`, `alerts.search`,
 `targets_view.columns`, and `targets_view.search`. `targets_view` only controls
-the table and filter; `targets` still defines where to fetch targets.
+the table and filter; `vmagent` defines where to fetch targets.
 
 Each list replaces its own default. Set only `columns` to change what's visible
 without changing search, or set only `search` to change `/` without changing
@@ -126,7 +128,7 @@ connections:
         - {field: labels.alertname, title: Alert}
         - duration
       search: [labels.servicename, labels.alertname, labels.instance]
-    targets:
+    vmagent:
       - {name: east, url: "https://monitoring.example.org/vmagent-east"}
       - {name: west, url: "https://monitoring.example.org/vmagent-west"}
     targets_view:

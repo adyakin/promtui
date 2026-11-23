@@ -13,14 +13,14 @@ connections:
     url: http://localhost:9090
   production:
     url: http://vmselect:8481/select/0/prometheus
-    targets:
+    vmagent:
       - {name: east, url: "https://monitoring.example.org/vmagent-east"}
       - {name: west, url: "https://monitoring.example.org/vmagent-west"}
 ```
 
-Omit `targets` to use the connection URL (`local` in this example). If the
+Omit `vmagent` and its legacy alias `targets` to use the connection URL (`local` in this example). If the
 default endpoint does not expose the Targets API, configure explicit sources.
-The YAML `targets` list must not be empty, and each source must have a unique
+The YAML `vmagent` list must not be empty, and each source must have a unique
 name and an HTTP(S) base URL. Explicit sources replace the fallback. Legacy
 TOML configs continue to use their connection URL. All sources inherit the
 effective connection `insecure_skip_verify` setting; verification is on by

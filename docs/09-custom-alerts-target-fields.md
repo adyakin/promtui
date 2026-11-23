@@ -45,7 +45,7 @@ connections:
         - labels.alertname
         - labels.instance
 
-    targets:
+    vmagent:
       - name: moscow
         url: https://vmagent-msk.example.com
       - name: novosibirsk
@@ -70,7 +70,7 @@ connections:
 
 ### Important
 
-The existing `targets` key already defines vmagent target sources.
+The `vmagent` key defines scrape target sources.
 
 Do not change its meaning or structure.
 

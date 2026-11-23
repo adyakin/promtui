@@ -34,7 +34,7 @@ connections:
     alertmanager_url: https://alertmanager.example.com
     insecure_skip_verify: true
 
-    targets:
+    vmagent:
       - name: moscow
         url: https://vmagent-msk.example.com
 
@@ -51,14 +51,14 @@ connections:
 
 ### Source resolution
 
-- If `targets` is explicitly configured, use exactly those sources.
-- If `targets` is omitted, use the connection's primary URL as a single default source.
+- If `vmagent` is explicitly configured, use exactly those sources.
+- If neither `vmagent` nor its legacy alias `targets` is configured, use the connection's primary URL as a single default source.
 - Do not infer source URLs from the backend hostname.
 - Do not attempt automatic vmagent discovery.
 - Do not introduce backend-specific target discovery modes.
 - If the default endpoint does not support the Targets API, display a clear error suggesting explicit source configuration.
 
-An explicitly configured empty `targets` list should produce a configuration validation error rather than silently falling back to the primary URL.
+An explicitly configured empty `vmagent` list should produce a configuration validation error rather than silently falling back to the primary URL.
 
 ### Validation
 

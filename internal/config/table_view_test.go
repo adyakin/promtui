@@ -14,7 +14,7 @@ func TestYAMLTableViews(t *testing.T) {
       columns:
         - state
         - {field: labels.app.service, title: 'My Service'}
-    targets:
+    vmagent:
       - {name: vmagent, url: 'https://agent.test'}
     targets_view:
       search: [labels.hidden, scrape_url]

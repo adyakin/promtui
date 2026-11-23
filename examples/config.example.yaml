@@ -26,7 +26,7 @@ connections:
     #     url: https://monitoring.example.org/vmalert-east
     #   - name: alerts-west
     #     url: https://monitoring.example.org/vmalert-west
-    # targets:
+    # vmagent:
     #   - name: agent-east
     #     url: https://monitoring.example.org/vmagent-east
     #   - name: agent-west

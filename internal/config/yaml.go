@@ -47,7 +47,8 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 			URL                string    `yaml:"url"`
 			AlertmanagerURL    string    `yaml:"alertmanager_url"`
 			InsecureSkipVerify yaml.Node `yaml:"insecure_skip_verify"`
-			Targets            yaml.Node `yaml:"targets"`
+			VMAgent            yaml.Node `yaml:"vmagent"`
+			LegacyTargets      yaml.Node `yaml:"targets"`
 			VMAlert            yaml.Node `yaml:"vmalert"`
 			Alerts             yaml.Node `yaml:"alerts"`
 			TargetsView        yaml.Node `yaml:"targets_view"`
@@ -59,7 +60,7 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 				if value.Content[j+1].ShortTag() != "!!str" {
 					return fmt.Errorf("connection %q: line %d: %s must be a string", key.Value, field.Line, field.Value)
 				}
-			case "insecure_skip_verify", "targets", "vmalert", "alerts", "targets_view":
+			case "insecure_skip_verify", "vmagent", "targets", "vmalert", "alerts", "targets_view":
 			default:
 				return fmt.Errorf("connection %q: line %d: unknown field %q", key.Value, field.Line, field.Value)
 			}
@@ -71,7 +72,14 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("connection %q: %w", key.Value, err)
 		}
-		targets, err := yamlSources(fields.Targets, "targets", "target")
+		sourceNode, sourceKey := fields.VMAgent, "vmagent"
+		if fields.LegacyTargets.Kind != 0 {
+			if sourceNode.Kind != 0 {
+				return fmt.Errorf("connection %q: use vmagent instead of targets; do not set both", key.Value)
+			}
+			sourceNode, sourceKey = fields.LegacyTargets, "targets"
+		}
+		targets, err := yamlSources(sourceNode, sourceKey, "target")
 		if err != nil {
 			return fmt.Errorf("connection %q: %w", key.Value, err)
 		}
