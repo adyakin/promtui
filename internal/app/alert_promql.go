@@ -51,7 +51,7 @@ func (m *Model) loadAlertQuery() tea.Cmd {
 		a.detailStatus = err.Error()
 		return nil
 	}
-	a.dialog = alertNoDialog
+	a.closeAlertDetails()
 	a.stop()
 	return cmd
 }

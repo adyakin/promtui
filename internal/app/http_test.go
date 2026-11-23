@@ -23,6 +23,8 @@ func TestConnectionTLS(t *testing.T) {
 			fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
 		case "/alerts/api/v2/alerts":
 			fmt.Fprint(w, `[]`)
+		case "/alerts/api/v2/status":
+			fmt.Fprint(w, `{"config":{"original":"{}"}}`)
 		case "/agent-a/api/v1/targets", "/agent-b/api/v1/targets":
 			fmt.Fprint(w, `{"status":"success","data":{"activeTargets":[]}}`)
 		default:

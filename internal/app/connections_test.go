@@ -53,6 +53,8 @@ func TestConnectionPickerIsSharedAcrossTabs(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v2/alerts":
 			fmt.Fprint(w, `[]`)
+		case "/api/v2/status":
+			fmt.Fprint(w, `{"config":{"original":"{}"}}`)
 		case "/api/v1/query":
 			if got := r.FormValue("query"); got != "up" {
 				t.Errorf("query = %q", got)

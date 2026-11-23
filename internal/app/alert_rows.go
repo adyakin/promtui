@@ -25,8 +25,9 @@ const (
 
 type alertRow struct {
 	alertmanager.Alert
-	id    string
-	group alertStatus
+	id            string
+	group         alertStatus
+	snapshotIndex int
 }
 
 func newAlertRow(source string, a alertmanager.Alert) alertRow {
@@ -44,7 +45,7 @@ func newAlertRow(source string, a alertmanager.Alert) alertRow {
 	switch {
 	case len(a.Status.SilencedBy) > 0:
 		group = alertSilenced
-	case len(a.Status.InhibitedBy) > 0:
+	case a.IsInhibited():
 		group = alertInhibited
 	case a.Status.State == "active":
 		group = alertActive
@@ -55,7 +56,7 @@ func newAlertRow(source string, a alertmanager.Alert) alertRow {
 }
 
 func (a alertRow) state() string {
-	if a.group == alertSilenced && len(a.Status.InhibitedBy) > 0 {
+	if a.group == alertSilenced && a.IsInhibited() {
 		return "Silenced + Inhibited"
 	}
 	if a.group == alertUnknown && a.Status.State == "suppressed" {
@@ -75,7 +76,7 @@ func countAlerts(rows []alertRow) alertCounts {
 		if len(a.Status.SilencedBy) > 0 {
 			c.silenced++
 		}
-		if len(a.Status.InhibitedBy) > 0 {
+		if a.IsInhibited() {
 			c.inhibited++
 		}
 	}

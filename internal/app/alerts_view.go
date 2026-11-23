@@ -38,6 +38,14 @@ func (m *Model) alertsFooter() string {
 		if m.opt.Connection.AlertmanagerURL != "" {
 			hints = append([]string{"s Silence"}, hints...)
 		}
+		if len(a.detailRelations.links) > 0 {
+			hints = append([]string{"i Related"}, hints...)
+		}
+		if len(a.detailTrail) > 0 {
+			back = "Esc Back"
+		}
+	case a.dialog == alertRelated:
+		hints, back = []string{"Enter Open", "↑↓ Select", "? Help"}, "Esc Back"
 	case a.dialog == alertStatusDialog:
 		hints, back = []string{"↑↓ Scroll", "? Help"}, "Esc Close"
 	case a.input.Focused():
@@ -99,6 +107,9 @@ func (a *alertsState) status() string {
 	}
 	if a.cancel != nil {
 		return "Refreshing alerts…"
+	}
+	if a.refreshErr != nil {
+		return "Refresh failed · showing cached alerts"
 	}
 	if !a.lastOK.IsZero() {
 		return "Updated " + a.lastOK.UTC().Format("15:04:05") + " UTC"
@@ -326,9 +337,14 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 		switch a.dialog {
 		case alertDetails:
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll details", "p: load the generator query in PromQL", "y: copy all labels", "Esc or ?: return to details"}
+			if len(a.detailRelations.links) > 0 {
+				lines = append(lines, "i: choose a related alert", "Esc in details: go back to the previous alert, or close")
+			}
 			if m.opt.Connection.AlertmanagerURL != "" {
 				lines = append(lines, "s: create a silence from this alert’s labels")
 			}
+		case alertRelated:
+			lines = []string{"↑ / ↓ and PgUp / PgDn: select a related alert", "Enter: open selected alert details", "Esc or ?: return to related alerts"}
 		case alertStatusDialog:
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll status", "Esc or ?: return to status"}
 		default:
@@ -344,19 +360,34 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 		}
 	case a.dialog == alertDetails:
 		name, lines = "Alert details", alertDetailLines(a.detail, now)
+		lines = append(lines, a.detailRelations.lines...)
+	case a.dialog == alertRelated:
+		name = "Related alerts"
 	case a.dialog == alertStatusDialog:
 		name, lines = "Alerts status", []string{a.status()}
 		if a.err != nil {
 			lines = append(lines, a.err.Error())
+		} else if a.refreshErr != nil {
+			lines = append(lines, a.refreshErr.Error())
 		}
 		if !a.lastOK.IsZero() {
 			lines = append(lines, "Last successful refresh: "+alertTime(a.lastOK))
 		}
 	}
 	width = min(76, m.width-max(4, m.width/8))
+	if !a.help && a.dialog == alertRelated {
+		room = min(len(a.detailRelations.links), m.height-max(7, m.height/3))
+		return
+	}
 	for _, line := range lines {
 		for _, paragraph := range strings.Split(strings.ReplaceAll(line, "\r\n", "\n"), "\n") {
-			rows = append(rows, strings.Split(ansi.Wrap(ui.Plain(paragraph), width-4, ""), "\n")...)
+			wrapped := strings.Split(ansi.Wrap(ui.Plain(paragraph), width-4, ""), "\n")
+			if line == "Inhibition" || strings.HasPrefix(line, "Inhibits (") {
+				for i, text := range wrapped {
+					wrapped[i] = dialogSurface.Bold(true).Foreground(statusYellow).Render(text)
+				}
+			}
+			rows = append(rows, wrapped...)
 		}
 	}
 	room = min(len(rows), m.height-max(7, m.height/3))
@@ -389,14 +420,27 @@ func (m *Model) alertDialogLayer(now time.Time) *lipgloss.Layer {
 	if m.alerts.help {
 		start = m.alerts.helpOffset
 	}
-	start = min(start, len(rows)-room)
+	total := len(rows)
+	related := !m.alerts.help && m.alerts.dialog == alertRelated
+	if related {
+		total = len(m.alerts.detailRelations.links)
+		start = max(0, m.alerts.relatedRow-room/2)
+	}
+	start = min(start, total-room)
 	meta := ""
-	if room < len(rows) {
-		meta = fmt.Sprintf("%d–%d/%d", start+1, start+room, len(rows))
+	if room < total {
+		meta = fmt.Sprintf("%d–%d/%d", start+1, start+room, total)
 	}
 	lines := make([]string, room)
-	for i, row := range rows[start : start+room] {
-		lines[i] = dialogSurface.Render(" " + row)
+	for i := range lines {
+		if related {
+			n := start + i
+			text := ui.Plain(m.alerts.relatedAlertName(m.alerts.detailRelations.links[n]))
+			line := renderStatusRow(width-2, n == m.alerts.relatedRow, "", ansi.Truncate(text, width-4, "…"), "", nil)
+			lines[i] = dialogSurface.Render(line)
+		} else {
+			lines[i] = dialogSurface.Render(" " + rows[start+i])
+		}
 	}
 	y := (m.height - room - 3) / 2
 	return lipgloss.NewLayer(renderFrame(name, meta, lines, width, true, dialogSurface)).X((m.width - width) / 2).Y(y).Z(1)

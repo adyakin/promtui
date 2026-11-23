@@ -19,6 +19,10 @@ import (
 func TestSavedItemsAcrossTabsAndConnections(t *testing.T) {
 	var reads atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/api/v2/status") {
+			fmt.Fprint(w, `{"config":{"original":"{}"}}`)
+			return
+		}
 		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/api/v2/alerts") {
 			t.Errorf("unexpected API request: %s %s", r.Method, r.URL)
 			w.WriteHeader(http.StatusMethodNotAllowed)

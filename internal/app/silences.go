@@ -447,7 +447,7 @@ func (m *Model) onSilenceWritten(v silenceWritten, now time.Time) tea.Cmd {
 			s.closeDetail()
 		}
 		if s.editor.fromAlert {
-			m.alerts.dialog = alertNoDialog
+			m.alerts.closeAlertDetails()
 			m.alerts.detailStatus = ""
 			m.alerts.silenceNotice = s.notice
 		}

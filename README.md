@@ -49,6 +49,8 @@ Open **5 Rules** to browse alerting and recording rules, inspect active alert in
 
 Start with the [YAML config example](examples/config.example.yaml) or the [TOML config example](examples/config.example.toml). The default connection points to Prometheus at `http://localhost:9090`. To use the Alerts tab, set `alertmanager_url` for that connection, for example `http://localhost:9093`. See the [configuration reference](docs/configuration.md) for more options.
 
+In Alerts, press `Enter` to see [inhibition sources, targets, and matching rules](docs/03-alerts.md#inhibition). When related alerts are available, press `i` to choose one and `Esc` to go back.
+
 Default paths on macOS and Linux:
 
 - **Config:** `~/.config/promtui/config.yaml`, then `config.yml`, then `config.toml`

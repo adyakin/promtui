@@ -270,12 +270,19 @@ Display:
 
 Do not invent an evaluation value if Alertmanager does not provide one.
 
+### Inhibition
+
+Alert Details uses Alertmanager's `inhibitedBy` references to show confirmed sources and count confirmed targets in **Inhibits**. If a source isn't in the fetched alerts, its reference is shown as unavailable. A `suppressed` state alone doesn't distinguish inhibition from silencing.
+
+PromTUI reads `inhibit_rules` from the configured Alertmanager's `/api/v2/status`. Matching rules are local explanations, not proof of which rule Alertmanager used. Alerts matched only by local evaluation are shown separately from confirmed sources and targets. If the status endpoint is unavailable or the rules can't be parsed, runtime relationships remain usable and the details show why rule explanations are unavailable. No additional connection settings are needed.
+
 ### Interaction
 
 - `↑ / ↓` scroll details.
 - `PgUp / PgDn` scroll one page.
 - `y` copies complete labels.
-- `Esc` closes the overlay.
+- `i` opens the related-alert picker when there are navigable sources or targets. Use `↑ / ↓` to select and `Enter` to open details, including for alerts outside the table filter.
+- `Esc` goes back to the previous details or closes the overlay. Navigation leaves the table selection, filters, sort, and connection intact and makes no API requests.
 
 Long annotations and labels must wrap or scroll correctly.
 
@@ -302,14 +309,16 @@ Requirements:
 - Do not overlap requests unnecessarily.
 - Cancel or ignore obsolete requests.
 - Preserve filters, sorting and selection.
-- Keep an open details overlay on successful refreshes; close it on failure to show the error.
+- Keep an open details overlay on its original snapshot during automatic refreshes.
 - Avoid unnecessary visual flickering.
 
 When returning to Alerts after visiting another tab, refresh if cached data is stale.
 
 ### Error handling
 
-If refresh fails:
+If an automatic refresh fails after a successful load, keep the cached list and its details usable. Show the failure in the status line and the error details in `Alt+S` Status.
+
+If the initial load or a manual refresh fails:
 
 - Preserve the last successful alert list in the cache.
 - Replace the visible list with the wrapped error in the Alerts pane. Let users scroll long errors.

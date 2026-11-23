@@ -29,13 +29,16 @@ type alertDialog uint8
 const (
 	alertNoDialog alertDialog = iota
 	alertDetails
+	alertRelated
 	alertStatusDialog
 )
 
 type alertsCompleted struct {
-	id   uint64
-	rows []alertmanager.Alert
-	err  error
+	id            uint64
+	rows          []alertmanager.Alert
+	err           error
+	inhibition    *alertmanager.Inhibition
+	inhibitionErr error
 }
 type alertsTick time.Time
 type alertLabelsCopied struct{ err error }
@@ -60,13 +63,20 @@ type alertsState struct {
 	help               bool
 	detailStatus       string
 	silenceNotice      string
+	inhibition         alertInhibitionSnapshot
+	detailInhibition   alertInhibitionSnapshot
+	detailRelations    alertRelations
+	detailTrail        []alertDetailVisit
+	relatedRow         int
 
 	requestID   uint64
 	cancel      context.CancelFunc
 	tickQueued  bool
+	background  bool
 	lastOK      time.Time
 	lastDone    time.Time
 	err         error
+	refreshErr  error
 	errorOffset int
 }
 
@@ -159,13 +169,32 @@ func (m *Model) fetchAlerts() tea.Cmd {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	a.cancel = cancel
+	a.background = false
 	a.requestID++
 	id := a.requestID
 	client := alertmanager.Client{Base: base, HTTP: m.connectionHTTP()}
 	return func() tea.Msg {
 		defer cancel()
+		type rulesResult struct {
+			rules []alertmanager.InhibitRule
+			err   error
+		}
+		status := make(chan rulesResult, 1)
+		go func() {
+			rules, err := client.InhibitRules(ctx)
+			status <- rulesResult{rules, err}
+		}()
 		rows, err := client.Alerts(ctx)
-		return alertsCompleted{id, rows, err}
+		if err != nil {
+			cancel()
+			<-status
+			return alertsCompleted{id: id, err: err}
+		}
+		result := <-status
+		return alertsCompleted{
+			id: id, rows: rows, inhibitionErr: result.err,
+			inhibition: alertmanager.IndexInhibition(rows, result.rules, time.Now()),
+		}
 	}
 }
 
@@ -193,7 +222,11 @@ func (m *Model) onAlertsTick(now time.Time) tea.Cmd {
 	a := &m.alerts
 	a.tickQueued = false
 	if now.Sub(a.lastDone) >= alertRefreshInterval && !errors.Is(a.err, alertmanager.ErrConfig) {
-		return m.refreshAlerts()
+		cmd := m.refreshAlerts()
+		if cmd != nil {
+			a.background = true
+		}
+		return cmd
 	}
 	return m.scheduleAlertsTick(now)
 }
@@ -205,18 +238,23 @@ func (m *Model) onAlertsCompleted(v alertsCompleted, now time.Time) tea.Cmd {
 	}
 	a.cancel = nil
 	a.lastDone = now
-	dialog := a.dialog
-	a.setError(v.err)
-	if m.silences.editor != nil && m.silences.editor.fromAlert {
-		a.dialog = dialog // Returning from the draft must restore the alert snapshot.
+	if a.background && v.err != nil && !a.lastOK.IsZero() && a.err == nil {
+		// Keep the previous list, relations and open details usable.
+		a.refreshErr = v.err
+		return m.scheduleAlertsTick(now)
 	}
+	a.refreshErr = nil
+	a.setError(v.err, m.silences.editor != nil && m.silences.editor.fromAlert)
 	if v.err == nil {
 		id, row := a.selection(), a.row
 		a.lastOK = now
 		a.rows = make([]alertRow, 0, len(v.rows))
-		for _, alert := range v.rows {
-			a.rows = append(a.rows, newAlertRow(m.opt.Connection.AlertmanagerURL, alert))
+		for i, alert := range v.rows {
+			row := newAlertRow(m.opt.Connection.AlertmanagerURL, alert)
+			row.snapshotIndex = i
+			a.rows = append(a.rows, row)
 		}
+		a.inhibition = alertInhibitionSnapshot{a.rows, v.inhibition, v.inhibitionErr}
 		a.counts = countAlerts(a.rows)
 		a.rebuild(id, row, now)
 	}
@@ -233,13 +271,13 @@ func (a *alertsState) edit(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-func (a *alertsState) setError(err error) {
+func (a *alertsState) setError(err error, keepDetails bool) {
 	a.err, a.errorOffset = err, 0
 	if err == nil {
 		return
 	}
-	if a.dialog == alertDetails {
-		a.dialog = alertNoDialog
+	if !keepDetails && (a.dialog == alertDetails || a.dialog == alertRelated) {
+		a.closeAlertDetails()
 	}
 	if a.input.Focused() {
 		a.input.Blur()
@@ -255,6 +293,7 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 		if a.dialog == alertStatusDialog {
 			a.dialog = alertNoDialog
 		} else {
+			a.closeAlertDetails()
 			a.dialog, a.offset = alertStatusDialog, 0
 		}
 		return nil
@@ -277,13 +316,27 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 		case "esc":
 			if a.help {
 				a.help = false
-			} else {
-				a.dialog = alertNoDialog
+			} else if a.dialog == alertRelated {
+				a.dialog = alertDetails
+			} else if a.dialog != alertDetails || !a.backToAlert() {
+				a.closeAlertDetails()
 			}
 		case "?":
 			a.help, a.helpOffset = !a.help, 0
 		case "up", "down", "pgup", "pgdown":
-			m.scrollAlertDialog(key)
+			if !a.help && a.dialog == alertRelated {
+				m.moveRelatedAlert(key)
+			} else {
+				m.scrollAlertDialog(key)
+			}
+		case "i":
+			if !a.help && a.dialog == alertDetails && len(a.detailRelations.links) > 0 {
+				a.dialog = alertRelated
+			}
+		case "enter":
+			if !a.help && a.dialog == alertRelated {
+				a.followRelatedAlert()
+			}
 		case "p":
 			if !a.help && a.dialog == alertDetails {
 				return m.loadAlertQuery()
@@ -337,7 +390,9 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 		a.moveTo(len(a.visible) - 1)
 	case "enter":
 		if len(a.visible) > 0 {
-			a.dialog, a.detail, a.offset, a.detailStatus = alertDetails, a.visible[a.row], 0, ""
+			a.detailTrail = nil
+			a.detailInhibition = a.inhibition
+			a.openAlertDetails(a.visible[a.row])
 		}
 	case "/":
 		if !a.lastOK.IsZero() {

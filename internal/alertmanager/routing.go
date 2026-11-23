@@ -55,16 +55,24 @@ type Integration struct {
 }
 
 func (c Client) Routing(ctx context.Context) (*Routing, error) {
+	original, err := c.originalConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return parseRouting(original)
+}
+
+func (c Client) originalConfig(ctx context.Context) (string, error) {
 	var status struct {
 		Config struct{ Original string }
 	}
 	if err := c.request(ctx, http.MethodGet, "api/v2/status", "", nil, &status); err != nil {
-		return nil, err
+		return "", err
 	}
 	if strings.TrimSpace(status.Config.Original) == "" {
-		return nil, errors.New("invalid Alertmanager status response: missing config.original")
+		return "", errors.New("invalid Alertmanager status response: missing config.original")
 	}
-	return parseRouting(status.Config.Original)
+	return status.Config.Original, nil
 }
 
 // Project just the fields used by the explorer rather than validating notifier
@@ -141,33 +149,11 @@ func (r *Routing) addRoute(raw *routeYAML, parent *Route, id string, depth int) 
 			*pair.dest = Setting[model.Duration]{*pair.value, id}
 		}
 	}
-	for _, legacy := range []struct {
-		values map[string]string
-		op     labels.MatchType
-	}{{raw.Match, labels.MatchEqual}, {raw.MatchRE, labels.MatchRegexp}} {
-		for name, value := range legacy.values {
-			m, err := labels.NewMatcher(legacy.op, name, value)
-			if err != nil {
-				return false
-			}
-			node.Matchers = append(node.Matchers, m)
-		}
+	matchers, err := configMatchers(raw.Matchers, raw.Match, raw.MatchRE)
+	if err != nil {
+		return false
 	}
-	for _, s := range raw.Matchers {
-		// Mirror Alertmanager's compatibility mode without logging input.
-		// Prefer the classic interpretation in case of disagreement.
-		m, err := labels.ParseMatcher(s)
-		if err != nil {
-			m, err = parse.Matcher(s)
-			if err != nil {
-				return false
-			}
-		}
-		node.Matchers = append(node.Matchers, m)
-	}
-	slices.SortFunc(node.Matchers, func(a, b *labels.Matcher) int {
-		return strings.Compare(a.String(), b.String())
-	})
+	node.Matchers = matchers
 	r.Routes[id] = node
 	r.Order = append(r.Order, id)
 	if node.Receiver.Value != "" {
@@ -181,6 +167,38 @@ func (r *Routing) addRoute(raw *routeYAML, parent *Route, id string, depth int) 
 		}
 	}
 	return true
+}
+
+func configMatchers(current []string, exact, regex map[string]string) (labels.Matchers, error) {
+	var matchers labels.Matchers
+	for _, legacy := range []struct {
+		values map[string]string
+		op     labels.MatchType
+	}{{exact, labels.MatchEqual}, {regex, labels.MatchRegexp}} {
+		for name, value := range legacy.values {
+			m, err := labels.NewMatcher(legacy.op, name, value)
+			if err != nil {
+				return nil, err
+			}
+			matchers = append(matchers, m)
+		}
+	}
+	for _, s := range current {
+		// Mirror Alertmanager's compatibility mode without logging input.
+		// Prefer the classic interpretation in case of disagreement.
+		m, err := labels.ParseMatcher(s)
+		if err != nil {
+			m, err = parse.Matcher(s)
+			if err != nil {
+				return nil, err
+			}
+		}
+		matchers = append(matchers, m)
+	}
+	slices.SortFunc(matchers, func(a, b *labels.Matcher) int {
+		return strings.Compare(a.String(), b.String())
+	})
+	return matchers, nil
 }
 
 func yamlValue(n *yaml.Node) *yaml.Node {

@@ -231,6 +231,10 @@ func TestAlertsNavigationFilterAndOverlay(t *testing.T) {
 
 func TestAlertsRefreshLifecycle(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/prefix/api/v2/status" {
+			fmt.Fprint(w, `{"config":{"original":"{}"}}`)
+			return
+		}
 		if r.URL.Path != "/prefix/api/v2/alerts" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
@@ -259,18 +263,18 @@ func TestAlertsRefreshLifecycle(t *testing.T) {
 		testAlert("a", "First", "info", "active", now),
 		testAlert("b", "Changed", "critical", "active", now),
 	}
-	m.onAlertsCompleted(alertsCompleted{m.alerts.requestID, newRows, nil}, now.Add(alertRefreshInterval))
+	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, rows: newRows}, now.Add(alertRefreshInterval))
 	if m.alerts.row != 0 || m.alerts.visible[0].Fingerprint != "b" || m.alerts.detail.Labels["alertname"] != "Second" {
 		t.Fatal("automatic refresh lost the stable selection or changed open details")
 	}
 	press(m, tea.KeyEsc, tea.KeyEnd)
 	_ = m.refreshAlerts()
-	m.onAlertsCompleted(alertsCompleted{m.alerts.requestID, newRows[1:], nil}, now.Add(alertRefreshInterval))
+	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, rows: newRows[1:]}, now.Add(alertRefreshInterval))
 	if m.alerts.row != 0 || len(m.alerts.visible) != 1 || m.alerts.visible[0].Fingerprint != "b" {
 		t.Fatal("disappeared selection did not move to nearest row")
 	}
 	_ = m.refreshAlerts()
-	m.onAlertsCompleted(alertsCompleted{m.alerts.requestID, nil, alertmanager.ErrAuth}, now.Add(alertRefreshInterval))
+	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, err: alertmanager.ErrAuth}, now.Add(alertRefreshInterval))
 	if screen := ansi.Strip(m.screen()); len(m.alerts.visible) != 1 ||
 		!strings.Contains(screen, "│  Authentication failed") || strings.Contains(screen, "Changed") {
 		t.Fatalf("error did not replace cached data in the pane:\n%s", screen)

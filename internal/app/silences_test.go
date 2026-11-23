@@ -305,6 +305,8 @@ func TestSilenceDetailsUpdateAndExpire(t *testing.T) {
 			fmt.Fprint(w, `{"silenceID":"replacement"}`)
 		case "GET /api/v2/alerts":
 			fmt.Fprint(w, `[]`)
+		case "GET /api/v2/status":
+			fmt.Fprint(w, `{"config":{"original":"{}"}}`)
 		case "DELETE /api/v2/silence/replacement":
 			deletes.Add(1)
 			w.WriteHeader(http.StatusOK)

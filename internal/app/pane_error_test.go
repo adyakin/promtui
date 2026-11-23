@@ -19,7 +19,7 @@ func TestRefreshErrorsWrapAndScrollInsidePane(t *testing.T) {
 			m.resize(minWidth, minHeight)
 			err := errors.New("Response exceeds 32 MiB.\n" + strings.Repeat("x", 90) + "\n\x1b[31mTail marker\x1b[0m")
 			if tab == alertsTab {
-				m.alerts.setError(err)
+				m.alerts.setError(err, false)
 			} else {
 				m.targets.sources[0].err = err
 			}
