@@ -13,6 +13,7 @@ Each view keeps its own selection and filter when you switch.
 | `Enter` in Receivers | Choose a referencing route, then press `Enter` again to jump to it and expand its ancestors |
 | `/` | Fuzzy filter; `Enter` applies, `Esc` cancels. Erase the input and apply to clear |
 | `s` in Receivers | Toggle between configuration order and sorting by name |
+| `y` in Receivers or the receiver overlay | Copy the selected receiver's YAML |
 | `r` | Refresh the configuration |
 | `?` | Show Routing help |
 
@@ -27,8 +28,12 @@ hide the destination.
 
 Receivers lists every receiver, including unused ones. Reference counts include
 both explicit and inherited assignments; they are **configuration references**,
-not alerts or delivered notifications. Receiver filtering searches names,
-integration types, and safe destination metadata.
+not alerts or delivered notifications. Receiver filtering searches names and
+integration types, not the contents of the YAML.
+
+The details panel shows the selected receiver's YAML, followed by its route
+references. Long lines wrap. Press `Tab` to focus the details and scroll, or
+press `Enter` to jump directly to the list of referencing routes.
 
 ## Data and privacy
 
@@ -39,12 +44,13 @@ it does not poll. If a refresh fails, the last successful snapshot for that
 connection remains visible and is marked stale. Switching connections discards
 that snapshot.
 
-Only allowlisted destination metadata is shown, such as a Slack channel, an
-email recipient, or a webhook host. URL credentials, paths, query parameters,
-and fragments are omitted. Redacted, templated, or file-backed destinations
-may be unavailable. Unknown integrations are listed by type without exposing
-their fields. PromTUI does not show or copy the raw configuration, evaluate
-templates, send notifications, or modify Alertmanager.
+PromTUI displays and copies only the selected receiver's YAML from
+`config.original`. This includes fields from unknown integrations, in the
+order Alertmanager returned them. Indentation may differ from the original.
+Redactions such as `<secret>` are left intact. PromTUI does not apply additional
+redaction, so treat displayed and copied YAML as sensitive if your server
+returns unredacted values. PromTUI does not read files referenced by the
+configuration, evaluate templates, send notifications, or modify Alertmanager.
 
 ## Example Alertmanager configuration
 

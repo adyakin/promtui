@@ -21,6 +21,7 @@ const (
 	routingReferencesHint = "Enter Routes"
 	routingSearchHint     = "/ Filter"
 	routingRefreshHint    = "r Refresh"
+	routingCopyYAMLHint   = "y Copy YAML"
 )
 
 type explorerLayout struct {
@@ -47,7 +48,13 @@ func (m *Model) routingFooter() string {
 	s := &m.routing
 	format := func(hints []string, back string) string { return m.formatFooter(hints, back, "  ") }
 	switch s.dialog {
-	case routingReceiverDialog, routingHelpDialog:
+	case routingReceiverDialog:
+		hints := []string{"↑↓ Scroll"}
+		if s.selectedReceiverYAML() != "" {
+			hints = append(hints, routingCopyYAMLHint)
+		}
+		return format(hints, "Esc Close")
+	case routingHelpDialog:
 		return format([]string{"↑↓ Scroll"}, "Esc Close")
 	case routingReferencesDialog:
 		return format([]string{routingSelectHint, "Enter Jump"}, "Esc Back")
@@ -66,6 +73,9 @@ func (m *Model) routingFooter() string {
 		if s.showReceivers {
 			if len(s.data.References[v.selected]) != 0 {
 				hints = append(hints, routingReferencesHint)
+			}
+			if s.selectedReceiverYAML() != "" {
+				hints = append(hints, routingCopyYAMLHint)
 			}
 		} else {
 			if s.data.Routes[v.selected].Receiver.Value != "" {
@@ -189,6 +199,9 @@ func (m *Model) routingScreen() (string, *tea.Cursor) {
 		default:
 			status = fmt.Sprintf("%d routes · %d receivers · read-only", len(s.data.Order), len(s.data.Receivers))
 		}
+		if s.copyStatus != "" {
+			status = s.copyStatus + " · " + status
+		}
 	}
 	status = lipgloss.NewStyle().Width(m.width).Render(ansi.Truncate(" "+status, m.width, "…"))
 	base := strings.Join([]string{m.header(routingTab), body, status, m.footer()}, "\n")
@@ -245,11 +258,11 @@ func integrationSummary(r *alertmanager.Receiver) string {
 	}
 	var kinds []string
 	counts := map[string]int{}
-	for _, i := range r.Integrations {
-		if counts[i.Type] == 0 {
-			kinds = append(kinds, i.Type)
+	for _, kind := range r.Integrations {
+		if counts[kind] == 0 {
+			kinds = append(kinds, kind)
 		}
-		counts[i.Type]++
+		counts[kind]++
 	}
 	for i, kind := range kinds {
 		kinds[i] = fmt.Sprintf("%s × %d", kind, counts[kind])
@@ -262,13 +275,10 @@ func (m *Model) routingDetails(width int) []string {
 	if s.data == nil || s.current().selected == "" {
 		return nil
 	}
-	var lines []string
 	if s.showReceivers {
-		lines = s.receiverDetails(s.receivers.selected)
-	} else {
-		lines = s.routeDetails(s.data.Routes[s.routes.selected])
+		return s.receiverDetails(s.receivers.selected, width)
 	}
-	return routingWrapped(lines, width)
+	return routingWrapped(s.routeDetails(s.data.Routes[s.routes.selected]), width)
 }
 
 func routingWrapped(lines []string, width int) []string {
@@ -331,28 +341,27 @@ func (s *routingState) routeDetails(n *alertmanager.Route) []string {
 		"Integrations: "+integrationSummary(s.receiver(n.Receiver.Value)))
 }
 
-func (s *routingState) receiverDetails(name string) []string {
-	lines := []string{"Name: " + name}
-	r := s.receiver(name)
-	if r == nil {
-		lines = append(lines, "Receiver not present in runtime configuration")
-	} else {
-		lines = append(lines, fmt.Sprintf("Integrations: %d · %s", len(r.Integrations), integrationSummary(r)))
-		for _, i := range r.Integrations {
-			destination := "destination unavailable"
-			if i.Destination != "" {
-				destination = i.DestinationLabel + ": " + i.Destination
-			}
-			lines = append(lines, "  "+i.Type+" · "+destination)
+func (s *routingState) receiverDetails(name string, width int) []string {
+	rows := routingWrapped([]string{"Name: " + name, ""}, width)
+	switch r := s.receiver(name); {
+	case r == nil:
+		rows = append(rows, routingWrapped([]string{"Receiver not present in runtime configuration"}, width)...)
+	case r.YAML == "":
+		rows = append(rows, routingWrapped([]string{"Receiver YAML unavailable"}, width)...)
+	default:
+		for _, line := range strings.Split(strings.TrimSuffix(r.YAML, "\n"), "\n") {
+			// Hard wrap long values without collapsing YAML indentation.
+			line = ansi.Hardwrap(ui.Plain(line), max(1, width-4), true)
+			rows = append(rows, strings.Split(line, "\n")...)
 		}
 	}
 	refs := s.data.References[name]
-	lines = append(lines, "", fmt.Sprintf("Configuration references: %d", len(refs)))
+	lines := []string{"", fmt.Sprintf("Configuration references: %d", len(refs))}
 	for _, id := range refs {
 		n := s.data.Routes[id]
 		lines = append(lines, "  "+id+"  "+s.routePath(id)+settingSource(id, n.Receiver.Source))
 	}
-	return lines
+	return append(rows, routingWrapped(lines, width)...)
 }
 
 func (m *Model) routingDialogContent() (name string, rows []string, width, room int) {
@@ -361,7 +370,7 @@ func (m *Model) routingDialogContent() (name string, rows []string, width, room 
 	switch s.dialog {
 	case routingReceiverDialog:
 		name = "Receiver details"
-		rows = routingWrapped(s.receiverDetails(s.data.Routes[s.routes.selected].Receiver.Value), width)
+		rows = s.receiverDetails(s.data.Routes[s.routes.selected].Receiver.Value, width)
 	case routingReferencesDialog:
 		name = "Jump to route"
 		for _, id := range s.data.References[s.receivers.selected] {
@@ -381,6 +390,7 @@ func (m *Model) routingDialogContent() (name string, rows []string, width, room 
 			routingReceiverHint + " (Routes) · " + routingReferencesHint + " (Receivers)",
 			"v Switch view · " + routingSearchHint + " (Enter apply; erase to clear)",
 			"s Sort receivers by name / configuration order",
+			routingCopyYAMLHint + " (Receivers or receiver overlay)",
 			routingRefreshHint + " (no polling) · 0–5 Tabs · q Quit",
 		}, width)
 	}
@@ -418,6 +428,8 @@ func (m *Model) routingModalKey(k string) tea.Cmd {
 		return m.act("quit", "", 0)
 	case k == "esc" || (s.dialog == routingHelpDialog && k == "?"):
 		s.dialog = routingNoDialog
+	case k == "y" && s.dialog == routingReceiverDialog:
+		return s.copyReceiverYAML()
 	case s.dialog == routingReferencesDialog:
 		refs := s.data.References[s.receivers.selected]
 		if k == "enter" {

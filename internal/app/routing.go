@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/atotto/clipboard"
 	"promtui/internal/alertmanager"
 )
 
@@ -14,6 +15,11 @@ type routingLoaded struct {
 	id   uint64
 	data *alertmanager.Routing
 	err  error
+}
+
+type receiverYAMLCopied struct {
+	requestID uint64
+	err       error
 }
 
 type routingView struct {
@@ -50,6 +56,7 @@ type routingState struct {
 	dialog            routingDialog
 	dialogRow         int
 	errorOffset       int
+	copyStatus        string
 }
 
 func newRoutingState() routingState {
@@ -85,6 +92,7 @@ func (m *Model) refreshRouting() tea.Cmd {
 	s.requestID++
 	id := s.requestID
 	s.cancel = cancel
+	s.copyStatus = ""
 	return func() tea.Msg {
 		defer cancel()
 		data, err := client.Routing(ctx)
@@ -192,7 +200,7 @@ func (s *routingState) rebuild() {
 	for _, r := range s.data.Receivers {
 		match := f.matches(r.Name)
 		for _, i := range r.Integrations {
-			match = match || f.matches(i.Type, i.Destination)
+			match = match || f.matches(i)
 		}
 		if match {
 			s.receivers.visible = append(s.receivers.visible, r.Name)
@@ -218,6 +226,33 @@ func (s *routingState) receiver(name string) *alertmanager.Receiver {
 		return &s.data.Receivers[i]
 	}
 	return nil
+}
+
+func (s *routingState) selectedReceiverYAML() string {
+	if s.data == nil {
+		return ""
+	}
+	var name string
+	switch {
+	case s.dialog == routingReceiverDialog:
+		if route := s.data.Routes[s.routes.selected]; route != nil {
+			name = route.Receiver.Value
+		}
+	case s.showReceivers && s.dialog == routingNoDialog:
+		name = s.receivers.selected
+	}
+	if receiver := s.receiver(name); receiver != nil {
+		return receiver.YAML
+	}
+	return ""
+}
+
+func (s *routingState) copyReceiverYAML() tea.Cmd {
+	text, id := s.selectedReceiverYAML(), s.requestID
+	if text == "" {
+		return nil
+	}
+	return func() tea.Msg { return receiverYAMLCopied{id, clipboard.WriteAll(text)} }
 }
 
 func (s *routingState) reveal(id string) {
@@ -282,6 +317,8 @@ func (m *Model) routingKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		switch k {
+		case "y":
+			return s.copyReceiverYAML()
 		case "/":
 			s.searchAnchor, s.searchOffset = v.selected, v.detailOffset
 			s.search.SetValue(v.filter)

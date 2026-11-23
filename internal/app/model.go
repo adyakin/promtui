@@ -252,6 +252,14 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case routingLoaded:
 		m.routing.loaded(v)
 		return m, nil
+	case receiverYAMLCopied:
+		if m.routing.requestID == v.requestID {
+			m.routing.copyStatus = "Copied receiver YAML"
+			if v.err != nil {
+				m.routing.copyStatus = "Could not copy receiver YAML"
+			}
+		}
+		return m, nil
 	case silencesLoaded:
 		return m, m.onSilencesLoaded(v, time.Now())
 	case silencesTick:

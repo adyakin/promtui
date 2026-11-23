@@ -6,7 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,9 +27,9 @@ route:
         - matchers: ['severity="critical"']
 receivers:
   - name: first
-    webhook_configs: [{url: "https://user:private-pass@notify.example.org/private-path?key=private-query"}]
+    webhook_configs: [{url: <secret>}]
   - name: second
-    slack_configs: [{channel: "#oncall", api_url: "https://example.org/private-slack"}]
+    slack_configs: [{channel: "#oncall", api_url: <secret>}]
   - name: unused
 `
 
@@ -67,8 +69,14 @@ func TestRoutingNavigationSearchAndLayout(t *testing.T) {
 	press(m, tea.KeyEnter)
 	details := ansi.Strip(m.screen())
 	if s.dialog != routingReceiverDialog || !strings.Contains(details, "#oncall") ||
-		!strings.Contains(details, "Configuration references: 2") || strings.Contains(details, "private-") {
+		!strings.Contains(details, "Configuration references: 2") || !strings.Contains(details, "<secret>") {
 		t.Fatal(details)
+	}
+	if got := s.selectedReceiverYAML(); !strings.Contains(got, "- name: second") || !strings.Contains(got, "#oncall") {
+		t.Fatalf("wrong YAML for receiver overlay: %q", got)
+	}
+	if cmd := m.routingModalKey("y"); cmd == nil {
+		t.Fatal("receiver overlay did not offer to copy YAML")
 	}
 	press(m, '0', 'v')
 	if m.activeTab != routingTab || s.showReceivers {
@@ -97,9 +105,17 @@ func TestRoutingNavigationSearchAndLayout(t *testing.T) {
 	if s.receivers.selected != "second" {
 		t.Fatal("cancelling search did not restore selection")
 	}
-	press(m, 'k', '/', 'p', 'r', 'i', 'v', 'a', 't', 'e')
+	press(m, 'k', '/', 's', 'e', 'c', 'r', 'e', 't')
 	if s.receivers.selected != "" {
 		t.Fatal("secret was searchable")
+	}
+	press(m, tea.KeyEsc)
+	if got := s.selectedReceiverYAML(); !strings.Contains(got, "webhook_configs") || strings.Contains(got, "slack_configs") {
+		t.Fatalf("wrong YAML for selection: %q", got)
+	}
+	press(m, '/', 's', 'l', 'a', 'c', 'k')
+	if s.receivers.selected != "second" {
+		t.Fatal("receiver search did not match the integration type")
 	}
 	press(m, tea.KeyEsc)
 	for _, size := range [][2]int{{24, 10}, {67, 18}, {68, 18}, {110, 28}} {
@@ -126,33 +142,100 @@ func TestRoutingNavigationSearchAndLayout(t *testing.T) {
 	}
 }
 
+func TestReceiverYAMLScrollAndCopy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(routingHandler))
+	defer server.Close()
+	m := New(Options{Connection: config.Connection{AlertmanagerURL: server.URL}}, nil)
+	loadRouting(t, m, pressAlt(m, '4'))
+	press(m, 'v', 'j', tea.KeyTab)
+	s := &m.routing
+	m.resize(32, 14)
+	width := m.explorerLayout().detailWidth
+	wrapped := m.routingDetails(width)
+	yaml := strings.TrimSuffix(s.selectedReceiverYAML(), "\n")
+	yamlRows := wrapped[2:]
+	end := slices.Index(yamlRows, "")
+	if end < 3 || strings.Join(yamlRows[:end], "") != strings.ReplaceAll(yaml, "\n", "") {
+		t.Fatalf("wrap lost YAML contents:\n%q\n%q", yamlRows, yaml)
+	}
+	press(m, tea.KeyEnd)
+	if s.receivers.detailOffset == 0 || !strings.Contains(ansi.Strip(m.screen()), "inherited") {
+		t.Fatal("scroll did not reach the route references")
+	}
+	m.resize(112, 24)
+	press(m, tea.KeyHome)
+	if !strings.Contains(ansi.Strip(m.screen()), "#oncall") || !strings.Contains(ansi.Strip(m.footer()), "Copy YAML") {
+		t.Fatal("receiver YAML or copy hint missing after resize")
+	}
+	_, copyCmd := m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if copyCmd == nil {
+		t.Fatal("receiver details did not offer to copy YAML")
+	}
+	// Do not modify the host clipboard during tests.
+	m.Update(receiverYAMLCopied{requestID: s.requestID})
+	if !strings.Contains(m.screen(), "Copied receiver YAML") {
+		t.Fatal("copy status not visible")
+	}
+	press(m, '/')
+	press(m, 'y')
+	if s.search.Value() != "y" {
+		t.Fatal("copy binding intercepted search input")
+	}
+}
+
+func TestRoutingMissingReceiver(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"config": map[string]string{
+			"original": "route: {receiver: missing}\nreceivers: []",
+		}})
+	}))
+	defer server.Close()
+	m := New(Options{Connection: config.Connection{AlertmanagerURL: server.URL}}, nil)
+	loadRouting(t, m, pressAlt(m, '4'))
+	press(m, tea.KeyEnter)
+	if !strings.Contains(ansi.Strip(m.screen()), "Receiver not present in runtime configuration") ||
+		m.routingModalKey("y") != nil {
+		t.Fatal("missing receiver should be shown as unavailable and cannot be copied")
+	}
+	press(m, tea.KeyEsc, 'v')
+	if !strings.Contains(ansi.Strip(m.screen()), "No receivers configured") {
+		t.Fatal("empty receiver list should have an unavailable state")
+	}
+}
+
 func TestRoutingRefreshAndConnectionSwitch(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(routingHandler))
+	var original atomic.Value
+	original.Store(routingFixture)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"config": map[string]string{"original": original.Load().(string)}})
+	}))
 	defer server.Close()
 	strict := config.Connection{Name: "strict", AlertmanagerURL: server.URL}
 	insecure := config.Connection{Name: "insecure", AlertmanagerURL: server.URL, InsecureSkipVerify: true}
 	missing := config.Connection{Name: "missing"}
-	m := New(Options{Connection: insecure, Connections: []config.Connection{insecure, strict, missing}}, nil)
+	other := config.Connection{Name: "other", AlertmanagerURL: server.URL + "/other", InsecureSkipVerify: true}
+	m := New(Options{Connection: insecure, Connections: []config.Connection{insecure, strict, missing, other}}, nil)
 	loadRouting(t, m, pressAlt(m, '4'))
-	press(m, 'j')
+	press(m, 'v', 'j')
 	snapshot := m.routing.data
+	original.Store(strings.ReplaceAll(routingFixture, "#oncall", "#platform"))
 	loadRouting(t, m, m.routingKey(tea.KeyPressMsg{Code: 'r', Text: "r"}))
-	if m.routing.routes.selected != "0/0" || snapshot == m.routing.data {
+	if m.routing.receivers.selected != "second" || snapshot == m.routing.data ||
+		!strings.Contains(m.routing.selectedReceiverYAML(), "#platform") {
 		t.Fatal("refresh did not update snapshot or preserve selection")
 	}
 	snapshot = m.routing.data
-	if m.refreshRouting() == nil {
-		t.Fatal("missing refresh")
-	}
-	m.Update(routingLoaded{id: m.routing.requestID, err: context.DeadlineExceeded})
-	if m.routing.data != snapshot || !strings.Contains(m.screen(), "Stale data") {
+	original.Store("route: [")
+	m.Update(m.refreshRouting()())
+	if m.routing.data != snapshot || !strings.Contains(m.screen(), "Stale data") ||
+		!strings.Contains(m.routing.selectedReceiverYAML(), "#platform") {
 		t.Fatal("refresh failure discarded valid configuration")
 	}
 	pending := m.refreshRouting()
 	oldID := m.routing.requestID
 	press(m, 'c', tea.KeyDown)
 	strictCmd := m.connectionKey("enter")
-	if strictCmd == nil || m.routing.data != nil || m.opt.Connection.Name != "strict" {
+	if strictCmd == nil || m.routing.data != nil || m.opt.Connection.Name != "strict" || m.routing.selectedReceiverYAML() != "" {
 		t.Fatal("connection switch did not reset snapshot and fetch")
 	}
 	if old := pending().(routingLoaded); !errors.Is(old.err, context.Canceled) {
@@ -170,6 +253,13 @@ func TestRoutingRefreshAndConnectionSwitch(t *testing.T) {
 	press(m, 'c', tea.KeyDown, tea.KeyEnter)
 	if m.routing.data != nil || m.routing.cancel != nil || !strings.Contains(m.screen(), "Set alertmanager_url") {
 		t.Fatal("missing Alertmanager URL was not handled")
+	}
+	original.Store(strings.ReplaceAll(routingFixture, "#oncall", "#other"))
+	press(m, 'c', tea.KeyDown)
+	loadRouting(t, m, m.connectionKey("enter"))
+	press(m, 'j')
+	if text := m.routing.selectedReceiverYAML(); !strings.Contains(text, "#other") || strings.Contains(text, "#platform") {
+		t.Fatalf("wrong receiver YAML after switching connections: %q", text)
 	}
 }
 

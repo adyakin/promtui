@@ -1,5 +1,8 @@
 # PromTUI — Milestone 10: Alertmanager Routing Explorer
 
+> This is the original milestone specification. For current receiver YAML
+> display, filtering, and clipboard behavior, see [Exploring routes and receivers](routing.md).
+
 ## Objective
 
 Implement a read-only Alertmanager routing explorer in PromTUI.
@@ -828,4 +831,3 @@ The milestone is complete when:
 13. Connection switching and refresh work correctly.
 14. No Alertmanager configuration is modified.
 15. Tests and documentation are complete.
-

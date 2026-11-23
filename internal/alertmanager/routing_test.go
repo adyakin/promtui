@@ -72,35 +72,56 @@ receivers: [{name: default}, {name: team}, {name: unused}]
 	}
 }
 
-func TestRoutingDestinations(t *testing.T) {
+func TestRoutingReceiverYAML(t *testing.T) {
+	const jira = `- name: jira-msdevops-bug
+  jira_configs:
+    - send_resolved: false
+      http_config:
+        authorization:
+          type: Bearer
+          credentials: <secret>
+        follow_redirects: true
+        enable_http2: true
+      api_url: https://sd-jira.demo.env/rest/api/2/
+`
+	const mixed = `- name: default
+  webhook_configs:
+    - url: <secret>
+    - url_file: /run/secrets/webhook
+  telegram_configs: [{chat_id: -100123, bot_token: '<secret>'}]
+  future_configs:
+    - enabled: false
+      unknown_options:
+        z_first: {more: [one, null, 3]}
+        a_second:
+          nested: "false"
+  extra_field: [1, 2]
+`
 	r, err := parseRouting(`
 route: {receiver: default}
 receivers:
-  - name: default
-    webhook_configs:
-      - url: https://private-user:private-password@hooks.example.org:8080/private-path?token=private-query#private-fragment
-        http_config: {authorization: {credentials: private-authorization}}
-      - url_file: /private-file
-    slack_configs:
-      - {channel: "#ops", api_url: https://example.org/private-token}
-      - {channel: '<secret>'}
-    telegram_configs: [{chat_id: -100123, bot_token: private-bot}]
-    email_configs:
-      - {to: ops@example.org, auth_password: private-email}
-      - {to: "{{ private-template }}"}
-    future_configs: [{destination: private-unknown}]
-`)
+` + mixed + jira + "- name: unused\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	list := r.Receivers[0].Integrations
-	want := []Integration{
-		{"Email", "To", "ops@example.org"}, {"Email", "To", ""}, {"future", "", ""},
-		{"Slack", "Channel", "#ops"}, {"Slack", "Channel", ""}, {"Telegram", "Chat ID", "-100123"},
-		{"Webhook", "Host", "hooks.example.org:8080"}, {"Webhook", "Host", ""},
+	if got := r.Receivers[0].Integrations; !slices.Equal(got, []string{"future", "Telegram", "Webhook", "Webhook"}) {
+		t.Fatalf("unexpected integration list: %v", got)
 	}
-	if !slices.Equal(list, want) || strings.Contains(fmt.Sprint(list), "private-") {
-		t.Fatalf("unexpected safe model: %+v", list)
+	for i, want := range []string{mixed, jira, "- name: unused\n"} {
+		if got := r.Receivers[i].YAML; got != want {
+			t.Errorf("receiver %d YAML:\n%s\nwant:\n%s", i, got, want)
+		}
+	}
+}
+
+func TestRoutingReceiverFlowYAML(t *testing.T) {
+	r, err := parseRouting("route: {receiver: first}\nreceivers: [{name: first}, {future_configs: [{field: yes}], name: second}]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := r.Receivers[1]
+	if second.Name != "second" || second.YAML != "- {future_configs: [{field: yes}], name: second}\n" {
+		t.Fatalf("unexpected receiver: %+v", second)
 	}
 }
 
@@ -112,6 +133,9 @@ func TestRoutingStatusErrors(t *testing.T) {
 		{`{}`, "missing config.original", 200},
 		{`{"config":{"original":"route: [private-yaml"}}`, "configuration YAML", 200},
 		{`{"config":{"original":"receivers: []"}}`, "missing root route", 200},
+		{`{"config":{"original":"route: {receiver: default}"}}`, "missing receivers field", 200},
+		{`{"config":{"original":"route: {receiver: default}\nreceivers: {}"}}`, "receivers must be a sequence", 200},
+		{`{"config":{"original":"route: {receiver: default}\nreceivers: [{}]"}}`, "invalid or duplicate receiver", 200},
 		{`private-body`, "malformed JSON", 200},
 		{`private-body`, "HTTP 503", 503},
 	}

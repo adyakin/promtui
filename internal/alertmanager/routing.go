@@ -1,10 +1,10 @@
 package alertmanager
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -17,8 +17,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Routing is a read-only snapshot. No raw YAML or integration credentials are
-// retained. Order contains route IDs in depth-first configuration order.
+// Routing is a read-only snapshot. Order contains route IDs in depth-first
+// configuration order.
 type Routing struct {
 	Routes     map[string]*Route
 	Order      []string
@@ -47,11 +47,8 @@ type Setting[T any] struct {
 
 type Receiver struct {
 	Name         string
-	Integrations []Integration
-}
-
-type Integration struct {
-	Type, DestinationLabel, Destination string
+	Integrations []string // one display name per configured integration
+	YAML         string   // one receiver sequence item from config.original
 }
 
 func (c Client) Routing(ctx context.Context) (*Routing, error) {
@@ -94,7 +91,7 @@ type routeYAML struct {
 func parseRouting(original string) (*Routing, error) {
 	var config struct {
 		Route     *routeYAML
-		Receivers []yaml.Node
+		Receivers yaml.Node
 	}
 	if err := yaml.Unmarshal([]byte(original), &config); err != nil {
 		// YAML and matcher errors may quote input containing credentials.
@@ -102,6 +99,13 @@ func parseRouting(original string) (*Routing, error) {
 	}
 	if config.Route == nil {
 		return nil, errors.New("invalid Alertmanager configuration: missing root route")
+	}
+	if config.Receivers.Kind == 0 {
+		return nil, errors.New("invalid Alertmanager configuration: missing receivers field")
+	}
+	receivers := yamlValue(&config.Receivers)
+	if receivers.Kind != yaml.SequenceNode {
+		return nil, errors.New("invalid Alertmanager configuration: receivers must be a sequence")
 	}
 	r := &Routing{Routes: map[string]*Route{}, References: map[string][]string{}}
 	defaults := Route{
@@ -113,8 +117,8 @@ func parseRouting(original string) (*Routing, error) {
 		return nil, errors.New("invalid Alertmanager configuration: invalid route or matcher")
 	}
 	seen := map[string]bool{}
-	for i := range config.Receivers {
-		receiver, ok := readReceiver(&config.Receivers[i])
+	for _, node := range receivers.Content {
+		receiver, ok := readReceiver(node)
 		if !ok || seen[receiver.Name] {
 			return nil, errors.New("invalid Alertmanager configuration: invalid or duplicate receiver")
 		}
@@ -211,8 +215,9 @@ func yamlValue(n *yaml.Node) *yaml.Node {
 var integrationKey = regexp.MustCompile(`^[a-z][a-z0-9_]*_configs$`)
 
 func readReceiver(n *yaml.Node) (Receiver, bool) {
+	n = yamlValue(n)
 	var fields map[string]yaml.Node
-	if yamlValue(n).Decode(&fields) != nil {
+	if n.Kind != yaml.MappingNode || n.Decode(&fields) != nil {
 		return Receiver{}, false
 	}
 	name := fields["name"]
@@ -234,64 +239,32 @@ func readReceiver(n *yaml.Node) (Receiver, bool) {
 			continue
 		}
 		kind := strings.TrimSuffix(key, "_configs")
-		for _, entry := range n.Content {
-			receiver.Integrations = append(receiver.Integrations, readIntegration(kind, yamlValue(entry)))
+		if label := integrationLabels[kind]; label != "" {
+			kind = label
+		}
+		for range n.Content {
+			receiver.Integrations = append(receiver.Integrations, kind)
 		}
 	}
+
+	// Isolate the YAML item structurally so both block and flow-style
+	// receivers work. Encode the node, not the lookup map: it preserves
+	// field order and fields we don't use in the list.
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	item := yaml.Node{Kind: yaml.SequenceNode, Content: []*yaml.Node{n}}
+	if enc.Encode(&item) != nil || enc.Close() != nil {
+		return Receiver{}, false
+	}
+	receiver.YAML = buf.String()
 	return receiver, true
 }
 
-func readIntegration(kind string, entry *yaml.Node) Integration {
-	i := Integration{Type: kind}
-	var key string
-	switch kind {
-	case "telegram":
-		i.Type, i.DestinationLabel, key = "Telegram", "Chat ID", "chat_id"
-	case "slack":
-		i.Type, i.DestinationLabel, key = "Slack", "Channel", "channel"
-	case "email":
-		i.Type, i.DestinationLabel, key = "Email", "To", "to"
-	case "webhook":
-		i.Type, i.DestinationLabel, key = "Webhook", "Host", "url"
-	case "msteams", "msteamsv2":
-		i.Type, i.DestinationLabel, key = "Microsoft Teams", "Host", "webhook_url"
-	case "discord":
-		i.Type, i.DestinationLabel, key = "Discord", "Host", "webhook_url"
-	case "pagerduty":
-		i.Type = "PagerDuty"
-	case "opsgenie":
-		i.Type = "Opsgenie"
-	case "pushover":
-		i.Type = "Pushover"
-	default:
-		return i
-	}
-	if key == "" {
-		return i
-	}
-	var fields map[string]yaml.Node
-	if entry.Decode(&fields) != nil {
-		return i
-	}
-	var value string
-	n := fields[key]
-	if n.Decode(&value) != nil {
-		return i
-	}
-	value = strings.TrimSpace(value)
-	if value == "" || strings.EqualFold(value, "<secret>") || strings.EqualFold(value, "<redacted>") ||
-		strings.Contains(value, "{{") {
-		return i
-	}
-	if i.DestinationLabel == "Host" {
-		// Never expose userinfo, path, query or fragment, even if the URL
-		// isn't recognized as a particular webhook provider.
-		u, err := url.Parse(value)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" {
-			return i
-		}
-		value = u.Host
-	}
-	i.Destination = value
-	return i
+// Keep the existing display names and ordering in the receiver list.
+var integrationLabels = map[string]string{
+	"telegram": "Telegram", "slack": "Slack", "email": "Email",
+	"webhook": "Webhook", "msteams": "Microsoft Teams", "msteamsv2": "Microsoft Teams",
+	"discord": "Discord", "pagerduty": "PagerDuty", "opsgenie": "Opsgenie",
+	"pushover": "Pushover",
 }
