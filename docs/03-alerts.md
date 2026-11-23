@@ -157,6 +157,9 @@ Avoid displaying all labels directly in the table.
 
 The table must support scrolling and terminals with limited width.
 
+Use [named Alerts views](configuration.md#named-alerts-views) to choose
+columns and tune their widths for the current connection.
+
 ### Sorting
 
 Default order:
@@ -191,6 +194,9 @@ Inside Alerts:
 | `Home / End` | First / last alert |
 | `Enter` | Open alert details |
 | `/` | Filter alerts |
+| `Ctrl+O` | Browse saved label filters and named views |
+| `Ctrl+S` | Save the active label matchers |
+| `D` | Restore the connection's default view |
 | `r` | Refresh alerts |
 | `s` | Change sort order |
 | `Esc` | Close active overlay |
@@ -220,10 +226,13 @@ Press `/` to enter filter mode.
 Requirements:
 
 - Case-insensitive fuzzy matching: typed characters must occur in order within a field.
-- Search only the table fields: state, severity, alert name, instance, and duration.
-- Labels and annotations shown only in alert details are not searched.
+- Search state, severity, alert name, instance, and duration by default.
+  `alerts.search` can replace that list independently of the current table view.
 - Update results interactively.
-- `Enter` applies the filter.
+- `↑` and `↓` highlight suggested alert names from the loaded list. No
+  suggestion is selected automatically.
+- `Enter` applies the typed text or explicitly selected suggestion. Either
+  way, it remains a fuzzy search, not an exact `alertname` label matcher.
 - `Esc` cancels filter editing.
 - Display the current filter when active.
 - Preserve filter state when switching tabs.
@@ -274,7 +283,7 @@ Do not invent an evaluation value if Alertmanager does not provide one.
 
 Alert Details uses Alertmanager's `inhibitedBy` references to show confirmed sources and count confirmed targets in **Inhibits**. If a source isn't in the fetched alerts, its reference is shown as unavailable. A `suppressed` state alone doesn't distinguish inhibition from silencing.
 
-PromTUI reads `inhibit_rules` from the configured Alertmanager's `/api/v2/status`. Matching rules are local explanations, not proof of which rule Alertmanager used. Alerts matched only by local evaluation are shown separately from confirmed sources and targets. If the status endpoint is unavailable or the rules can't be parsed, runtime relationships remain usable and the details show why rule explanations are unavailable. No additional connection settings are needed.
+PromTUI reads `inhibit_rules` from the configured Alertmanager's `/api/v2/status`. Where available, it shows matching rules and the values of their `equal` labels for sources and targets. These rules are local explanations, not proof of which rule Alertmanager used. Alerts matched only by local evaluation are distinguished from confirmed sources and targets. If the status endpoint is unavailable or the rules can't be parsed, runtime relationships remain usable and the details show why rule explanations are unavailable. No additional connection settings are needed.
 
 ### Interaction
 

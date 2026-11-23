@@ -28,6 +28,7 @@ type Options struct {
 	ProgramStatus         bool
 	Connection            config.Connection
 	Connections           []config.Connection
+	AlertViews            map[string]config.TableView
 	Timeout, Window, Step time.Duration
 	End                   time.Time
 	Ranged                bool
@@ -49,6 +50,7 @@ type Model struct {
 	shellState
 	promQLState
 	alerts          alertsState
+	alertViews      alertViewSelection
 	silences        silencesState
 	targets         targetsState
 	routing         routingState
@@ -90,6 +92,7 @@ func New(o Options, entries []history.Entry) *Model {
 	m := &Model{alerts: newAlertsState(o.Connection.Alerts), targets: newTargetsState(o.Connection), silences: newSilencesState(), routing: newRoutingState(), rules: newRulesState(o.Connection), promQLState: promQLState{
 		opt: o, entries: entries, cursor: -1, editor: editor.Buffer{Model: e}, resultFilter: newResultFilter(), status: "Ready", summary: "No query executed",
 	}}
+	m.restoreAlertView()
 	m.resize(80, 24)
 	return m
 }
@@ -416,6 +419,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.editSilenceInput(v)
 		}
 		if !m.quitting && m.activeTab == alertsTab && m.alerts.input.Focused() {
+			if m.alerts.help || m.alerts.dialog != alertNoDialog {
+				return m, nil
+			}
 			return m, m.alerts.edit(v)
 		}
 		if !m.quitting && m.activeTab == targetsTab && m.targets.input.Focused() {

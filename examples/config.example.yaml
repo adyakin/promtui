@@ -13,6 +13,18 @@ query:
 terminal:
   program_status: true
 
+# Named Alerts views can also be defined in alert_views.d/*.yaml beside this file.
+# alerts:
+#   views:
+#     victoria:
+#       columns:
+#         - {source: state, width: 11}
+#         - {source: labels.severity, width: 10}
+#         - {source: labels.servicename, title: Service, weight: 2}
+#         - {source: labels.alertname, weight: 3}
+#         - {source: labels.instance, weight: 2}
+#         - {source: duration, width: 8}
+
 connections:
   local:
     url: http://localhost:9090
@@ -32,6 +44,7 @@ connections:
     #   - name: agent-west
     #     url: https://monitoring.example.org/vmagent-west
     # alerts:
+    #   default_view: victoria  # requires the named view above (or an external one)
     #   columns: [state, {field: labels.servicename, title: Service}, alertname, duration]
     #   search: [labels.servicename, labels.alertname, labels.instance]
     # targets_view:
