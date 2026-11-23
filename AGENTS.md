@@ -5,6 +5,9 @@
 - **Dialogs:** Use floating overlays, not full-screen replacements or layout reflow. Overlays capture focus, preserve the underlying layout and state (including Kitty graphs), and restore focus on close. See [overlay requirements](docs/uix-layover.md).
 - **Backends:** Keep both Prometheus and VictoriaMetrics working. Preserve URL path prefixes and account for separate `vmagent`, `vmalert`, and Alertmanager endpoints where relevant. Don't block MetricsQL queries on local PromQL parser warnings. Cover both backends when changing shared API behavior.
 
+## Development
+- use feature branches and worktrees for new feature.
+
 ## Go checks
 
 - Use the Go version in `go.mod` or newer. Keep patches focused, follow existing package boundaries, and prefer the standard library over new dependencies.
