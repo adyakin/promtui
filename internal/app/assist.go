@@ -241,5 +241,9 @@ func (m *Model) menu(x, y int) *lipgloss.Layer {
 		out[i] = row.Render(ansi.Truncate(ui.Plain(s), contentWidth, "…"))
 	}
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("6")).Render(strings.Join(out, "\n"))
-	return lipgloss.NewLayer(box).X(min(x, m.width-contentWidth-2)).Y(y).Z(1)
+	x = min(x, m.width-contentWidth-2)
+	m.mouseDialog(x, y, contentWidth+2, len(out), m.promQLMouseKey)
+	m.mouseRows(x+1, y+2, contentWidth, first, min(first+n, len(m.options)), label,
+		func(i int) string { return m.options[i] }, func(i int) tea.Cmd { m.selected = i; return nil }, nil)
+	return lipgloss.NewLayer(box).X(x).Y(y).Z(1)
 }

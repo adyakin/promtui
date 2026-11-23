@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"image"
 	"net/http"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ type Options struct {
 	Graphics              bool
 	ProbeGraphics         bool
 	ProgramStatus         bool
+	Mouse                 bool
 	Connection            config.Connection
 	Connections           []config.Connection
 	AlertViews            map[string]config.TableView
@@ -58,6 +60,9 @@ type Model struct {
 	httpClients     map[bool]*http.Client
 	programStatus   terminalStatus
 	parameterDialog *parameterDialog
+	urlFeedback     uint64
+	showURLFeedback bool
+	mouse           mouseState
 }
 
 type promQLState struct {
@@ -97,6 +102,8 @@ func New(o Options, entries []history.Entry) *Model {
 	return m
 }
 func (m *Model) resize(w, h int) {
+	m.mouseModal()
+	m.mouse.last = mouseClick{}
 	m.width, m.height = w, h
 	m.editor.SetWidth(max(8, w-2))
 	m.editor.SetHeight(max(1, min(6, h/4, h-9)))
@@ -248,11 +255,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case tea.MouseMsg:
+		return m, m.handleMouse(v, time.Now())
+	case urlFeedbackExpired:
+		if uint64(v) == m.urlFeedback {
+			m.showURLFeedback = false
+		}
+		return m, nil
 	case rulesLoaded:
+		m.mouse.last = mouseClick{}
 		return m, m.onRulesLoaded(v, time.Now())
 	case rulesTick:
 		return m, m.onRulesTick(time.Time(v))
 	case routingLoaded:
+		m.mouse.last = mouseClick{}
 		m.routing.loaded(v)
 		return m, nil
 	case receiverYAMLCopied:
@@ -264,6 +280,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case silencesLoaded:
+		m.mouse.last = mouseClick{}
 		return m, m.onSilencesLoaded(v, time.Now())
 	case silencesTick:
 		return m, m.onSilencesTick(time.Time(v))
@@ -280,6 +297,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case silenceWritten:
 		return m, m.onSilenceWritten(v, time.Now())
 	case targetsCompleted:
+		m.mouse.last = mouseClick{}
 		return m, m.onTargetsCompleted(v, time.Now())
 	case targetsTick:
 		return m, m.onTargetsTick(time.Time(v))
@@ -292,6 +310,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case alertsCompleted:
+		m.mouse.last = mouseClick{}
 		return m, m.onAlertsCompleted(v, time.Now())
 	case alertsTick:
 		return m, m.onAlertsTick(time.Time(v))
@@ -359,6 +378,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.save()
 		}
 	case completed:
+		m.mouse.last = mouseClick{}
 		if m.id != v.id {
 			return m, nil
 		}
@@ -448,6 +468,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.KeyPressMsg:
+		m.mouse.last = mouseClick{}
+		m.showURLFeedback = false
 		if m.quitting {
 			return m, nil
 		}
@@ -563,6 +585,9 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(content)
 	v.AltScreen = true
 	v.Cursor = cursor
+	if m.opt.Mouse {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
 	return v
 }
 func (m *Model) screen() string {
@@ -648,6 +673,9 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 			renderPaneError(body, paneErrorRows(inner-2, "Graph rendering failed", m.chart.err), 0)
 		}
 	case m.chart.enabled:
+		m.mouseRegion(image.Rect(1, w.bodyY, m.width-1, w.bottomY), func(key string) tea.Cmd {
+			return m.act("select", key, graphKeys)
+		})
 		if room > 1 {
 			switch {
 			case !m.hasVisibleSeries():
@@ -659,6 +687,23 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 		body[room-1] = m.legend()
 	default:
 		copy(body, strings.Split(m.table.View(inner, room), "\n"))
+		m.mouseRegion(image.Rect(1, w.bodyY, m.width-1, w.bottomY), func(key string) tea.Cmd {
+			return m.act("select", key, tableKeys)
+		})
+		if m.opt.Mouse {
+			open := withoutOpen(m.resultFilter.input.Focused(), func() tea.Cmd { return m.act("labels", "l", tableKeys) })
+			m.table.VisibleRows(room, func(i, y int) {
+				s := m.table.Rows[i]
+				m.mouseItem(image.Rect(1, w.bodyY+y, m.width-1, w.bodyY+y+1),
+					mouseID{"results", s.Name + "\x00" + s.Labels}, func() tea.Cmd {
+						m.table.Move(i - m.table.Row)
+						if !m.resultFilter.input.Focused() {
+							return m.act("results", "", 0)
+						}
+						return nil
+					}, open)
+			})
+		}
 	}
 	base := strings.Join([]string{m.header(promQLTab, m.queryStatus()...),
 		frame("Query", runHint, queryRows, m.width, m.scope() == editKeys), "",
@@ -672,6 +717,7 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), dialog).Render(), cursor
 	}
 	if !m.pickingConnection && m.panel == savedTemplateKeys {
+		m.mouseModal()
 		dialog, cursor := m.savedTemplateLayer()
 		return lipgloss.NewCompositor(lipgloss.NewLayer(base), dialog).Render(), cursor
 	}

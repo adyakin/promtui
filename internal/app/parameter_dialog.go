@@ -172,9 +172,10 @@ func (m *Model) parameterLayer() (*lipgloss.Layer, *tea.Cursor) {
 	}
 	room := maxRows - len(errors)
 	first := dialogStart(d.row, len(d.fields), room)
+	end := min(first+room, len(d.fields))
 	labelWidth := width / 3
 	caret := 0
-	for i := first; i < min(first+room, len(d.fields)); i++ {
+	for i := first; i < end; i++ {
 		f := &d.fields[i]
 		label := ansi.Truncate(f.definition.Name, labelWidth, "…")
 		value, col := dialogInput(f.input, f.input.Width())
@@ -188,6 +189,11 @@ func (m *Model) parameterLayer() (*lipgloss.Layer, *tea.Cursor) {
 		rows = append(rows, dialogSurface.Foreground(lipgloss.Color("11")).Render(" "+line+" "))
 	}
 	x, y := (m.width-width)/2, 1+(m.height-5-len(rows))/2
+	m.mouseDialog(x, y, width, end-first, func(key string) tea.Cmd {
+		return d.focus(targetNavigate(key, d.row, len(d.fields), room))
+	})
+	m.mouseRows(x+1, y+1, width-2, first, end, "parameters",
+		func(i int) string { return d.fields[i].definition.Name }, d.focus, nil)
 	meta := ""
 	if len(d.fields) > 1 {
 		meta = fmt.Sprintf("%d/%d", d.row+1, len(d.fields))

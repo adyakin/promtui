@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	"maps"
 	"slices"
@@ -87,6 +88,19 @@ func (m *Model) rulesScreen() (string, *tea.Cursor) {
 	if row := s.selectedRow(); row >= 0 {
 		room := len(list) - 1
 		start := min(row, max(min(s.listTop, max(0, len(s.visible)-room)), row-room+1))
+		selectRule := func(i int) tea.Cmd {
+			s.selectNode(s.visible[i])
+			s.ensureVisible(room)
+			return nil
+		}
+		m.mouseRegion(image.Rect(1, 2, layout.listWidth-1, 2+len(list)), func(key string) tea.Cmd {
+			return selectRule(targetNavigate(key, s.selectedRow(), len(s.visible), room))
+		})
+		m.mouseRows(1, 3, layout.listWidth-2, start, min(start+room, len(s.visible)), "rules",
+			func(i int) string { return s.visible[i].id }, func(i int) tea.Cmd {
+				s.details = false
+				return selectRule(i)
+			}, withoutOpen(s.search.Focused(), m.mousePaneEnter))
 		listMeta = fmt.Sprintf("%d/%d", row+1, len(s.visible))
 		for i := start; i < min(start+room, len(s.visible)); i++ {
 			list[i-start+1] = s.listLine(i, row, layout.listWidth-2)
@@ -94,7 +108,14 @@ func (m *Model) rulesScreen() (string, *tea.Cursor) {
 	} else {
 		list[1] = "  No matching rules"
 	}
-	detailMeta := renderPaneError(details, rulesDetails(s.selection(), layout.detailWidth), s.detailTop)
+	content := rulesDetails(s.selection(), layout.detailWidth)
+	detailMeta := renderPaneError(details, content, s.detailTop)
+	box := layout.detailBox()
+	m.mouseRegion(box, func(key string) tea.Cmd {
+		s.detailTop = scrollPaneError(key, s.detailTop, len(content), layout.detailRows)
+		return nil
+	})
+	m.mouseItem(box, mouseID{}, func() tea.Cmd { s.details = true; return nil }, nil)
 	left := frame("Rules", listMeta, list, layout.listWidth, focused && (!s.details || s.search.Focused()))
 	right := frame("Details", detailMeta, details, layout.detailWidth, focused && s.details && !s.search.Focused())
 	body := left + "\n" + right
@@ -243,7 +264,7 @@ func rulesDetails(n *ruleNode, width int) []string {
 	var rows []string
 	add := func(key, value string) {
 		if value != "" {
-			rows = append(rows, key+": "+value)
+			rows = append(rows, detailField(key, ": ", value, true))
 		}
 	}
 	seconds := func(key string, value *float64) {
@@ -272,15 +293,15 @@ func rulesDetails(n *ruleNode, width int) []string {
 	}
 	fields := func(title string, values map[string]string) {
 		if len(values) != 0 {
-			rows = append(rows, "", title+":")
+			rows = append(rows, "", detailHeading(title+":"))
 			for _, key := range slices.Sorted(maps.Keys(values)) {
-				rows = append(rows, "  "+key+" = "+values[key])
+				rows = append(rows, "  "+detailField(key, " = ", values[key], false))
 			}
 		}
 	}
-	rows = append(rows, n.title)
+	rows = append(rows, detailHeading(n.title))
 	if err := n.errorText(); err != "" {
-		rows = append(rows, ansi.Truncate("Error: "+ui.Plain(err), max(1, width-4), "…")+" [e]")
+		rows = append(rows, detailField("Error", ": ", ansi.Truncate(ui.Plain(err), max(1, width-11), "…"), true)+" [e]")
 	}
 	if n.parent != nil {
 		add("Source", n.source.Name)
@@ -308,7 +329,7 @@ func rulesDetails(n *ruleNode, width int) []string {
 		add("Type", alertValueOr(r.Type, "unknown"))
 		add("Health", r.Health)
 		if r.Expression != "" {
-			rows = append(rows, "", "Expression:", r.Expression, "")
+			rows = append(rows, "", detailHeading("Expression:"), detailText(r.Expression), "")
 		}
 		if r.Type == api.AlertingRule {
 			add("State", r.State)
@@ -320,7 +341,8 @@ func rulesDetails(n *ruleNode, width int) []string {
 					pending++
 				}
 			}
-			rows = append(rows, fmt.Sprintf("Active instances: %d · Pending: %d", len(r.Alerts), pending))
+			rows = append(rows, fmt.Sprintf("%s · %s", detailField("Active instances", ": ", fmt.Sprint(len(r.Alerts)), false),
+				detailField("Pending", ": ", fmt.Sprint(pending), pending > 0)))
 		} else {
 			add("State", r.State)
 		}
@@ -347,10 +369,11 @@ func rulesDetails(n *ruleNode, width int) []string {
 				failed++
 			}
 		}
-		rows = append(rows, fmt.Sprintf("Rules: %d · Evaluation errors: %d", len(g.Rules), failed))
+		rows = append(rows, fmt.Sprintf("%s · %s", detailField("Rules", ": ", fmt.Sprint(len(g.Rules)), false),
+			detailField("Evaluation errors", ": ", fmt.Sprint(failed), failed > 0)))
 		fields("Group labels", g.Labels)
 	case n.source.data != nil:
-		rows = append(rows, fmt.Sprintf("Groups: %d", len(n.source.data.Groups)))
+		add("Groups", fmt.Sprint(len(n.source.data.Groups)))
 		if len(n.source.data.Groups) == 0 {
 			rows = append(rows, "No rule groups configured")
 		}
@@ -358,7 +381,7 @@ func rulesDetails(n *ruleNode, width int) []string {
 	if n.source.data != nil {
 		add("Warning", n.source.data.Warning)
 	}
-	return strings.Split(ansi.Hardwrap(displayErrorText(strings.Join(rows, "\n")), width, true), "\n")
+	return wrappedStyled(strings.Join(rows, "\n"), width, true)
 }
 
 func (m *Model) rulesOverlayLayer() *lipgloss.Layer {
@@ -367,10 +390,15 @@ func (m *Model) rulesOverlayLayer() *lipgloss.Layer {
 	body := make([]string, min(room, len(rows)))
 	meta := renderPaneError(body, rows, s.overlayTop)
 	for i := range body {
-		body[i] = dialogSurface.Render(body[i])
+		if s.overlayTitle == "Rule error" {
+			body[i] = detailDialogRow(detailError.Render(body[i]))
+		} else {
+			body[i] = dialogSurface.Render(body[i])
+		}
 	}
-	return lipgloss.NewLayer(renderFrame(s.overlayTitle, meta, body, width, true, dialogSurface)).
-		X((m.width - width) / 2).Y((m.height - len(body) - 3) / 2).Z(1)
+	x, y := (m.width-width)/2, (m.height-len(body)-3)/2
+	m.mouseDialog(x, y, width, len(body), m.paneKey)
+	return lipgloss.NewLayer(renderFrame(s.overlayTitle, meta, body, width, true, dialogSurface)).X(x).Y(y).Z(1)
 }
 
 func (m *Model) rulesOverlayContent() (rows []string, width, room int) {

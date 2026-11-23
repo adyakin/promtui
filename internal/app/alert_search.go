@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"promtui/internal/ui"
 )
@@ -113,5 +114,8 @@ func (m *Model) alertSuggestionsLayer() *lipgloss.Layer {
 	for i, name := range s.matches[first : first+room] {
 		rows[i] = dialogRow(ui.Plain(name), "", width-2, first+i+1 == s.selected)
 	}
+	m.mouseDialog(x, y, width, room, m.paneKey)
+	m.mouseRows(x+1, y+1, width-2, first, first+room, "alert names",
+		func(i int) string { return s.matches[i] }, func(i int) tea.Cmd { s.selected = i + 1; return nil }, nil)
 	return lipgloss.NewLayer(renderFrame("Alert names", meta, rows, width, true, dialogSurface)).X(x).Y(y).Z(1)
 }

@@ -155,7 +155,7 @@ func TestReceiverYAMLScrollAndCopy(t *testing.T) {
 	yaml := strings.TrimSuffix(s.selectedReceiverYAML(), "\n")
 	yamlRows := wrapped[2:]
 	end := slices.Index(yamlRows, "")
-	if end < 3 || strings.Join(yamlRows[:end], "") != strings.ReplaceAll(yaml, "\n", "") {
+	if end < 3 || ansi.Strip(strings.Join(yamlRows[:end], "")) != strings.ReplaceAll(yaml, "\n", "") {
 		t.Fatalf("wrap lost YAML contents:\n%q\n%q", yamlRows, yaml)
 	}
 	press(m, tea.KeyEnd)

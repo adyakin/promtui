@@ -11,6 +11,7 @@ import (
 var (
 	statusRed        = lipgloss.Color("1")
 	statusYellow     = lipgloss.Color("3")
+	statusGreen      = ansi.Green
 	selectedRowStyle = lipgloss.NewStyle().Reverse(true)
 )
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -33,6 +34,7 @@ func matcherWidths(width int) (label, value int) {
 
 func (m *Model) sizeAlertSavedInputs() {
 	d := &m.alerts.saved
+	m.mouseModal()
 	width := max(minWidth-2, m.alertSavedWidth())
 	switch d.mode {
 	case alertSavedName, alertSavedSearch:
@@ -113,6 +115,7 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 	inner, maxRows := width-2, m.height-5
 	title, meta := "Open — Alerts", ""
 	var rows []string
+	first, end, listY := 0, 0, 0
 	var cursor *tea.Cursor
 	text := func(s string) {
 		rows = append(rows, dialogSurface.Render(" "+ansi.Truncate(ui.Plain(s), inner-2, "…")+" "))
@@ -157,7 +160,8 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 			}
 		}
 		room = min(10, room-len(rows))
-		first := dialogStart(d.row, len(d.matches), room)
+		first = dialogStart(d.row, len(d.matches), room)
+		end, listY = min(first+room, len(d.matches)), len(rows)
 		if len(d.matches) > 0 {
 			meta = fmt.Sprintf("%d/%d", d.row+1, len(d.matches))
 		}
@@ -192,7 +196,8 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 			text("Tab: field · Ctrl+N: add · Ctrl+D: remove")
 		}
 		room -= len(rows)
-		first := dialogStart(d.row, len(d.editors), room)
+		first = dialogStart(d.row, len(d.editors), room)
+		end, listY = min(first+room, len(d.editors)), len(rows)
 		meta = fmt.Sprintf("%d/%d", d.row+1, len(d.editors))
 		for i := first; i < min(first+room, len(d.editors)); i++ {
 			r := &d.editors[i]
@@ -217,6 +222,15 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 		rows = append(rows, dialogSurface.Foreground(lipgloss.Color("11")).Render(" "+line+" "))
 	}
 	x, y := (m.width-width)/2, 1+(maxRows-len(rows))/2
+	m.mouseDialog(x, y, width, len(rows), m.paneKey)
+	switch d.mode {
+	case alertSavedBrowse, alertSavedSearch:
+		m.mouseRows(x+1, y+1+listY, inner, first, end, "alert picker", strconv.Itoa,
+			func(i int) tea.Cmd { d.row = i; return nil }, nil)
+	case alertSavedManual:
+		m.mouseRows(x+1, y+1+listY, inner, first, end, "matchers", strconv.Itoa,
+			func(i int) tea.Cmd { return d.focusMatcher(i, d.field) }, nil)
+	}
 	layer := lipgloss.NewLayer(renderFrame(title, meta, rows, width, true, dialogSurface)).X(x).Y(y).Z(1)
 	if cursor != nil && !m.quitting {
 		cursor.X += x

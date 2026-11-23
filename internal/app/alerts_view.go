@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"image/color"
 	"maps"
 	"slices"
@@ -42,6 +43,9 @@ func (m *Model) alertsFooter() string {
 		}
 		if len(a.detailTrail) > 0 {
 			back = "Esc Back"
+		}
+		if webLink(a.detail.GeneratorURL) {
+			hints = append([]string{"u Copy URL"}, hints...)
 		}
 	case a.dialog == alertRelated:
 		hints, back = []string{"Enter Open", "↑↓ Select", "? Help"}, "Esc Back"
@@ -137,6 +141,7 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	switch {
 	case a.err != nil:
 		meta = renderPaneError(body, m.alertErrorRows(), a.errorOffset)
+		m.mouseRegion(image.Rect(1, 2, m.width-1, m.height-3), m.paneKey)
 	case m.opt.Connection.AlertmanagerURL == "":
 		copy(body, strings.Split(ansi.Wrap("Set alertmanager_url in this connection’s configuration to load alerts.", width-4, ""), "\n"))
 		for i, row := range body {
@@ -174,12 +179,16 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 			body[2] = "  No matching alerts"
 		default:
 			room := m.alertPage()
-			first := min(max(0, a.row-room/2), max(0, len(a.visible)-room))
+			first := dialogStart(a.row, len(a.visible), room)
 			last := min(first+room, len(a.visible))
+			m.mouseTable("alerts", first, last, func(i int) string { return a.visible[i].id }, a.moveTo, !a.input.Focused(), func(key string) tea.Cmd {
+				a.moveTo(targetNavigate(key, a.row, len(a.visible), room))
+				return nil
+			})
 			table := a.tableForWidth(width, now)
 			body[2] = table.header()
 			for i := first; i < last; i++ {
-				body[3+i-first] = table.row(i == a.row, a.visible[i], now)
+				body[tableDataStart+i-first] = table.row(i == a.row, a.visible[i], now)
 			}
 		}
 	}
@@ -189,6 +198,9 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	}
 	if a.detailStatus != "" && !a.help && a.dialog == alertDetails {
 		status = a.detailStatus + " · " + status
+	}
+	if m.showURLFeedback && !a.help && a.dialog == alertDetails {
+		status = "URL sent to clipboard · " + status
 	}
 	if a.err == nil && len(a.visible) > 0 {
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
@@ -270,44 +282,48 @@ func alertDetailOverview(a alertRow) []string {
 }
 
 func alertDetailBody(a alertRow, inhibition []string) []string {
-	lines := []string{
-		"Last update: " + alertTime(a.UpdatedAt),
-	}
+	lines := []string{detailField("Last update", ": ", alertTime(a.UpdatedAt), true)}
 	if value := a.Annotations["value"]; value != "" {
-		lines = append(lines, "Evaluation value (annotation): "+value)
+		lines = append(lines, detailField("Evaluation value (annotation)", ": ", value, false))
 	}
-	lines = append(lines, inhibition...)
-	lines = append(lines, "", "Annotations")
+	for _, line := range inhibition {
+		if line == "Inhibition" || strings.HasPrefix(line, "Inhibits (") {
+			lines = append(lines, title.Render(detailText(line)))
+		} else {
+			lines = append(lines, detailLine(line, false))
+		}
+	}
+	lines = append(lines, "", title.Render("Annotations"))
 	if len(a.Annotations) == 0 {
-		lines = append(lines, "—")
+		lines = append(lines, detailMissing.Render("—"))
 	}
 	for _, key := range []string{"summary", "description"} {
 		if value, ok := a.Annotations[key]; ok {
-			lines = append(lines, key+": "+alertValue(value))
+			lines = append(lines, detailField(key, ": ", value, false))
 		}
 	}
 	for _, key := range slices.Sorted(maps.Keys(a.Annotations)) {
 		if key != "summary" && key != "description" {
-			lines = append(lines, key+": "+alertValue(a.Annotations[key]))
+			lines = append(lines, detailField(key, ": ", a.Annotations[key], false))
 		}
 	}
-	lines = append(lines, "", "Labels")
+	lines = append(lines, "", title.Render("Labels"))
 	if len(a.Labels) == 0 {
-		lines = append(lines, "—")
+		lines = append(lines, detailMissing.Render("—"))
 	}
 	for _, key := range slices.Sorted(maps.Keys(a.Labels)) {
-		lines = append(lines, key+": "+alertValue(a.Labels[key]))
+		lines = append(lines, detailField(key, ": ", a.Labels[key], false))
 	}
 	var receivers []string
 	for _, receiver := range a.Receivers {
 		receivers = append(receivers, receiver.Name)
 	}
-	lines = append(lines, "", "Alertmanager",
-		"Receivers: "+alertValue(strings.Join(receivers, ", ")),
-		"Silence IDs: "+alertValue(strings.Join(a.Status.SilencedBy, ", ")),
-		"Inhibited by: "+alertValue(strings.Join(a.Status.InhibitedBy, ", ")))
+	lines = append(lines, "", title.Render("Alertmanager"),
+		detailField("Receivers", ": ", strings.Join(receivers, ", "), false),
+		detailField("Silence IDs", ": ", strings.Join(a.Status.SilencedBy, ", "), false),
+		detailField("Inhibited by", ": ", strings.Join(a.Status.InhibitedBy, ", "), false))
 	if a.GeneratorURL != "" {
-		lines = append(lines, "Generator URL: "+a.GeneratorURL)
+		lines = append(lines, detailField("Generator URL", ": ", a.GeneratorURL, true))
 	}
 	return lines
 }
@@ -323,15 +339,19 @@ func (a *alertsState) wrappedAlertDetails(now time.Time, width int) []string {
 	c := &a.detailWrap
 	duration := "Duration: " + alertDuration(a.detail.StartsAt, now)
 	if c.rows == nil || c.width != width {
-		rows := appendAlertDialogRows(nil, alertDetailOverview(a.detail), width)
+		rows := wrapDetails(alertDetailOverview(a.detail), width-4, false, "Overview")
 		at := len(rows)
-		rows = appendAlertDialogRows(rows, []string{duration}, width)
+		wrapped := wrapDetails([]string{duration}, width-4, false)
+		rows = append(rows, wrapped...)
+		for _, line := range alertDetailBody(a.detail, a.detailRelations.lines) {
+			rows = append(rows, wrappedStyled(line, width-4, false)...)
+		}
 		*c = alertDetailWrap{
-			width: width, duration: duration, durationAt: at, durationLen: len(rows) - at,
-			rows: appendAlertDialogRows(rows, alertDetailBody(a.detail, a.detailRelations.lines), width),
+			width: width, duration: duration, durationAt: at,
+			durationLen: len(wrapped), rows: rows,
 		}
 	} else if c.duration != duration {
-		wrapped := appendAlertDialogRows(nil, []string{duration}, width)
+		wrapped := wrapDetails([]string{duration}, width-4, false)
 		start, end := c.durationAt, c.durationAt+c.durationLen
 		c.rows = slices.Replace(c.rows, start, end, wrapped...)
 		c.duration, c.durationLen = duration, len(wrapped)
@@ -350,6 +370,9 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 		switch a.dialog {
 		case alertDetails:
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll details", "p: load the generator query in PromQL", "y: copy all labels", "Esc or ?: return to details"}
+			if webLink(a.detail.GeneratorURL) {
+				lines = append(lines, "u: copy the generator URL")
+			}
 			if len(a.detailRelations.links) > 0 {
 				lines = append(lines, "i: choose a related alert", "Esc in details: go back to the previous alert, or close")
 			}
@@ -453,9 +476,18 @@ func (m *Model) alertDialogLayer(now time.Time) *lipgloss.Layer {
 			line := renderStatusRow(width-2, n == m.alerts.relatedRow, "", ansi.Truncate(text, width-4, "…"), "", nil)
 			lines[i] = dialogSurface.Render(line)
 		} else {
-			lines[i] = dialogSurface.Render(" " + rows[start+i])
+			lines[i] = detailDialogRow(" " + rows[start+i])
 		}
 	}
 	y := (m.height - room - 3) / 2
-	return lipgloss.NewLayer(renderFrame(name, meta, lines, width, true, dialogSurface)).X((m.width - width) / 2).Y(y).Z(1)
+	x := (m.width - width) / 2
+	m.mouseDialog(x, y, width, room, m.paneKey)
+	if related {
+		m.mouseRows(x+1, y+1, width-2, start, start+room, "related alerts",
+			func(i int) string { return m.alerts.detailInhibition.rows[m.alerts.detailRelations.links[i].index].id },
+			func(i int) tea.Cmd { m.alerts.relatedRow = i; return nil }, m.mousePaneEnter)
+	} else if !m.alerts.help && m.alerts.dialog == alertDetails {
+		m.mouseLinks(x+2, y+1, rows[start:start+room])
+	}
+	return lipgloss.NewLayer(renderFrame(name, meta, lines, width, true, dialogSurface)).X(x).Y(y).Z(1)
 }

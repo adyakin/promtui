@@ -65,6 +65,7 @@ func run(args []string, stdout io.Writer) error {
 	o.SavedAlertsPath = filepath.Join(dir, "alerts.yaml")
 	o.SilenceCreator = cfg.SilenceCreator
 	o.ProgramStatus = cfg.Terminal.ProgramStatus && term.IsTerminal(os.Stdout.Fd())
+	o.Mouse = cfg.UI.Mouse
 	switch *graphics {
 	case "auto":
 		o.Graphics = os.Getenv("TERM_PROGRAM") == "rex" || os.Getenv("TERM") == "xterm-kitty"

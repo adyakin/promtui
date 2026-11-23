@@ -366,6 +366,10 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 				text := alertLabelText(a.detail.Labels)
 				return func() tea.Msg { return alertLabelsCopied{clipboard.WriteAll(text)} }
 			}
+		case "u":
+			if !a.help && a.dialog == alertDetails {
+				return m.copyDetailURL(a.detail.GeneratorURL)
+			}
 		}
 		return nil
 	}

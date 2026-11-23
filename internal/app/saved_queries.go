@@ -284,6 +284,7 @@ func (m *Model) savedQueryLayer() (*lipgloss.Layer, *tea.Cursor) {
 	var meta string
 	var rows []string
 	inputRow := -1
+	first, end, listY := 0, 0, 0
 	text := func(s string) {
 		rows = append(rows, dialogSurface.Render(" "+ansi.Truncate(s, inner-2, "…")+" "))
 	}
@@ -330,7 +331,8 @@ func (m *Model) savedQueryLayer() (*lipgloss.Layer, *tea.Cursor) {
 			}
 		}
 		room := min(maxRows-len(rows)-len(errorRows), 10)
-		first := dialogStart(q.row, len(q.matches), room)
+		first = dialogStart(q.row, len(q.matches), room)
+		end, listY = min(first+room, len(q.matches)), len(rows)
 		if len(q.matches) > 0 {
 			meta = fmt.Sprintf("%d/%d", q.row+1, len(q.matches))
 		}
@@ -359,6 +361,9 @@ func (m *Model) savedQueryLayer() (*lipgloss.Layer, *tea.Cursor) {
 	}
 	x := (m.width - width) / 2
 	y := 1 + (m.height-3-len(rows)-2)/2
+	m.mouseDialog(x, y, width, len(rows), m.promQLMouseKey)
+	m.mouseRows(x+1, y+1+listY, inner, first, end, "saved queries",
+		func(i int) string { return q.queries[q.matches[i]].Name }, func(i int) tea.Cmd { q.row = i; return nil }, nil)
 	layer := lipgloss.NewLayer(renderFrame(title, meta, rows, width, true, dialogSurface)).X(x).Y(y).Z(1)
 	if inputRow >= 0 && !m.quitting {
 		if q.input.Focused() {
