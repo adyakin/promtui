@@ -44,6 +44,11 @@ func (v ViewKind) FieldTitle(field string) string {
 	if label, ok := LabelName(field); ok {
 		return strings.ToUpper(label)
 	}
+	if v == AlertsView {
+		if annotation, ok := strings.CutPrefix(field, "annotations."); ok {
+			return strings.ToUpper(annotation)
+		}
+	}
 	return fieldTitles[v][field]
 }
 
@@ -61,13 +66,13 @@ func (v ViewKind) validateField(field string) error {
 		}
 		return nil
 	}
-	if v.FieldTitle(field) == "" {
+	if fieldTitles[v][field] == "" {
 		return fmt.Errorf("unknown field %q (use labels.<name> for a Prometheus label)", field)
 	}
 	return nil
 }
 
-func yamlTableView(node yaml.Node, view ViewKind, path string) (TableView, error) {
+func yamlTableView(node yaml.Node, view ViewKind, path string, defaultView *string) (TableView, error) {
 	var result TableView
 	if node.Kind == 0 {
 		return result, nil
@@ -79,7 +84,7 @@ func yamlTableView(node yaml.Node, view ViewKind, path string) (TableView, error
 	keys := map[string]bool{}
 	for i := 0; i < len(n.Content); i += 2 {
 		key, list := n.Content[i].Value, unalias(n.Content[i+1])
-		if key != "columns" && key != "search" {
+		if key != "columns" && key != "search" && !(key == "default_view" && defaultView != nil) {
 			return result, fmt.Errorf("%s: unknown property %q", path, key)
 		}
 		listPath := path + "." + key
@@ -87,6 +92,17 @@ func yamlTableView(node yaml.Node, view ViewKind, path string) (TableView, error
 			return result, fmt.Errorf("%s: duplicate property", listPath)
 		}
 		keys[key] = true
+		if key == "default_view" {
+			name, err := yamlViewString(list, key)
+			if err != nil {
+				return result, fmt.Errorf("%s: %w", path, err)
+			}
+			if strings.TrimSpace(name) == "" {
+				return result, fmt.Errorf("%s must not be empty", listPath)
+			}
+			*defaultView = name
+			continue
+		}
 		if list.Kind != yaml.SequenceNode || len(list.Content) == 0 {
 			return result, fmt.Errorf("%s: expected a nonempty list", listPath)
 		}
@@ -96,7 +112,7 @@ func yamlTableView(node yaml.Node, view ViewKind, path string) (TableView, error
 			var col Column
 			var err error
 			if key == "columns" {
-				col, err = yamlColumn(item)
+				col, err = yamlColumn(item, "field")
 			} else {
 				col.Field, err = yamlViewString(item, "field")
 			}
@@ -120,8 +136,11 @@ func yamlTableView(node yaml.Node, view ViewKind, path string) (TableView, error
 	return result, nil
 }
 
-func yamlColumn(n *yaml.Node) (Column, error) {
+func yamlColumn(n *yaml.Node, sourceKey string) (Column, error) {
 	if n.Kind != yaml.MappingNode {
+		if sourceKey == "source" {
+			return Column{}, fmt.Errorf("expected a mapping with a source")
+		}
 		field, err := yamlViewString(n, "field")
 		return Column{Field: field}, err
 	}
@@ -129,28 +148,58 @@ func yamlColumn(n *yaml.Node) (Column, error) {
 	seen := map[string]bool{}
 	for i := 0; i < len(n.Content); i += 2 {
 		key := n.Content[i].Value
-		if key != "field" && key != "title" {
-			return col, fmt.Errorf("unknown column property %q", key)
-		}
 		if seen[key] {
 			return col, fmt.Errorf("duplicate column property %q", key)
 		}
 		seen[key] = true
-		value, err := yamlViewString(unalias(n.Content[i+1]), key)
-		if err != nil {
-			return col, err
-		}
-		if key == "title" {
+		valueNode := unalias(n.Content[i+1])
+		switch {
+		case key == sourceKey:
+			value, err := yamlViewString(valueNode, key)
+			if err != nil {
+				return col, err
+			}
+			col.Field = value
+		case key == "title":
+			value, err := yamlViewString(valueNode, key)
+			if err != nil {
+				return col, err
+			}
 			if strings.TrimSpace(value) == "" {
 				return col, fmt.Errorf("title must not be empty")
 			}
 			col.Title = value
-		} else {
-			col.Field = value
+		case sourceKey == "source" && (key == "width" || key == "weight"):
+			var value int
+			if valueNode.Kind != yaml.ScalarNode || valueNode.ShortTag() != "!!int" || valueNode.Decode(&value) != nil || value <= 0 {
+				return col, fmt.Errorf("%s must be a positive integer", key)
+			}
+			if key == "width" {
+				col.Width = value
+			} else {
+				col.Weight = value
+			}
+		case sourceKey == "source" && key == "extract":
+			value, err := yamlViewString(valueNode, key)
+			if err != nil {
+				return col, err
+			}
+			col.Extract, err = regexp.Compile(value)
+			if err != nil {
+				return col, fmt.Errorf("invalid extract regex: %w", err)
+			}
+			if col.Extract.NumSubexp() != 1 {
+				return col, fmt.Errorf("extract regex must contain exactly one capture group")
+			}
+		default:
+			return col, fmt.Errorf("unknown column property %q", key)
 		}
 	}
-	if !seen["field"] {
-		return col, fmt.Errorf("missing field")
+	if !seen[sourceKey] {
+		return col, fmt.Errorf("missing %s", sourceKey)
+	}
+	if seen["width"] && seen["weight"] {
+		return col, fmt.Errorf("width and weight are mutually exclusive")
 	}
 	return col, nil
 }
