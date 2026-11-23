@@ -72,6 +72,13 @@ func TestIndexInhibitionRuntimeAndRules(t *testing.T) {
 	if !reflect.DeepEqual(idx.Targets(0), []int{2, 3}) || !reflect.DeepEqual(idx.Targets(1), []int{2}) {
 		t.Fatal("reverse links must be deduplicated and runtime-confirmed only")
 	}
+	for target := range rows {
+		for _, source := range idx.Sources(target) {
+			if got := idx.MatchingRules(source.Source, target); !reflect.DeepEqual(got, source.Rules) {
+				t.Errorf("pair %s → %s: got %v, want %v", source.Fingerprint, rows[target].Fingerprint, got, source.Rules)
+			}
+		}
+	}
 }
 
 func TestIndexInhibitionTwoSidedAndExpiredSources(t *testing.T) {
@@ -87,18 +94,41 @@ func TestIndexInhibitionTwoSidedAndExpiredSources(t *testing.T) {
 		inhibitAlert("target-only", "warning", ""),
 		inhibitAlert("expired", "critical", ""),
 	}
-	rows[4].EndsAt = now.Add(-time.Second)
-	rows[1].Status.InhibitedBy = []string{"both-a"}
+	rows[4].EndsAt = now
+	rows[1].Status.InhibitedBy = []string{"both-a", "both-b", "expired"}
 	idx := IndexInhibition(rows, rules, now)
 	if got := idx.Sources(1); !reflect.DeepEqual(got, []Inhibitor{
-		{-1, "both-a", true, nil}, {0, "source-only", false, []int{0}},
+		{-1, "both-a", true, nil}, {2, "both-b", true, nil}, {4, "expired", true, nil}, {0, "source-only", false, []int{0}},
 	}) || len(idx.Targets(1)) != 0 {
-		t.Fatalf("self reference or two-sided overlap resulted in a link: %+v", got)
+		t.Fatalf("runtime references must survive local expiry and overlap, without a self link: %+v", got)
+	}
+	if idx.MatchingRules(2, 1) != nil || idx.MatchingRules(4, 1) != nil {
+		t.Fatal("runtime links do not establish which rule matched")
 	}
 	if got := idx.Sources(3); !reflect.DeepEqual(got, []Inhibitor{
 		{0, "source-only", false, []int{0}}, {1, "both-a", false, []int{0}}, {2, "both-b", false, []int{0}},
 	}) {
 		t.Fatalf("target-only alerts should accept two-sided sources but not expired sources: %+v", got)
+	}
+}
+
+func TestInhibitionReferenceMustIdentifyOneRow(t *testing.T) {
+	rows := []Alert{
+		inhibitAlert("duplicate", "critical", "payments"),
+		inhibitAlert("duplicate", "critical", "checkout"),
+		inhibitAlert("", "critical", "payments"),
+		inhibitAlert("target", "warning", "payments"),
+	}
+	rows[3].Status.InhibitedBy = []string{"duplicate", "", "target", "duplicate"}
+	idx := IndexInhibition(rows, nil, time.Now())
+	want := []Inhibitor{{-1, "duplicate", true, nil}, {-1, "", true, nil}, {-1, "target", true, nil}}
+	if got := idx.Sources(3); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	for i := range rows {
+		if got := idx.Targets(i); len(got) != 0 {
+			t.Fatalf("unexpected reverse links for row %d: %v", i, got)
+		}
 	}
 }
 

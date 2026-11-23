@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -95,10 +96,18 @@ func IndexInhibition(alerts []Alert, rules []InhibitRule, now time.Time) *Inhibi
 	}
 	for i, a := range alerts {
 		if a.Fingerprint != "" {
-			x.byID[a.Fingerprint] = i
+			if _, exists := x.byID[a.Fingerprint]; exists {
+				// An ambiguous reference cannot identify a source row.
+				x.byID[a.Fingerprint] = -1
+			} else {
+				x.byID[a.Fingerprint] = i
+			}
 		}
 	}
 	for i, a := range alerts {
+		if len(a.Status.InhibitedBy) == 0 {
+			continue
+		}
 		seen := make(map[int]bool)
 		for _, id := range a.Status.InhibitedBy {
 			if source := x.source(i, id); source >= 0 && !seen[source] {
@@ -132,6 +141,8 @@ func IndexInhibition(alerts []Alert, rules []InhibitRule, now time.Time) *Inhibi
 					b = &bucket{}
 					buckets[key] = b
 				}
+				// Appending in snapshot order lets MatchingRules check
+				// membership without walking the entire bucket.
 				b.all = append(b.all, i)
 				if !isTarget {
 					b.sourceOnly = append(b.sourceOnly, i)
@@ -182,9 +193,32 @@ func (x *Inhibition) source(target int, id string) int {
 	return -1
 }
 
+// MatchingRules returns the locally matching rule indices for this pair, in
+// configuration order. The runtime API reports fingerprints, not rule IDs.
+func (x *Inhibition) MatchingRules(source, target int) []int {
+	if source < 0 || source >= len(x.alerts) || target < 0 || target >= len(x.alerts) ||
+		source == target || sameFingerprint(x.alerts[source], x.alerts[target]) {
+		return nil
+	}
+	var rules []int
+	for _, group := range x.candidates[target] {
+		if _, ok := slices.BinarySearch(group.sources, source); ok {
+			rules = append(rules, group.rule)
+		}
+	}
+	return rules
+}
+
+func sameFingerprint(a, b Alert) bool {
+	return a.Fingerprint != "" && a.Fingerprint == b.Fingerprint
+}
+
 // Sources combines authoritative runtime references with separately marked
 // local matches. A matching rule is never proof that Alertmanager used it.
 func (x *Inhibition) Sources(target int) []Inhibitor {
+	if target < 0 || target >= len(x.alerts) {
+		return nil
+	}
 	var result []Inhibitor
 	positions := make(map[int]int)
 	seen := make(map[string]bool)
@@ -202,7 +236,7 @@ func (x *Inhibition) Sources(target int) []Inhibitor {
 	for _, group := range x.candidates[target] {
 		for _, source := range group.sources {
 			id := x.alerts[source].Fingerprint
-			if source == target || id != "" && id == x.alerts[target].Fingerprint {
+			if source == target || sameFingerprint(x.alerts[source], x.alerts[target]) {
 				continue
 			}
 			pos, ok := positions[source]

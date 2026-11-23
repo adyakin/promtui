@@ -76,14 +76,25 @@ func (s alertInhibitionSnapshot) relations(row alertRow) alertRelations {
 			out.lines = append(out.lines, "State: inhibited (reported by Alertmanager)")
 			if len(row.Status.InhibitedBy) == 0 {
 				out.lines = append(out.lines, "No runtime source reference reported.")
+			} else {
+				out.lines = append(out.lines, "Alertmanager may report only one of several matching sources.")
 			}
+		} else if len(sources) > 0 {
+			out.lines = append(out.lines, "No runtime inhibition reported; sources below are local matches only.")
 		}
 		if s.err != nil {
 			out.lines = append(out.lines, "Rule explanations unavailable: "+s.err.Error())
 		}
 		for _, source := range sources {
 			if source.Source < 0 {
-				out.lines = append(out.lines, "", "Confirmed source unavailable: "+alertValue(source.Fingerprint))
+				reason := "not uniquely resolvable in this alert snapshot"
+				switch {
+				case source.Fingerprint == "":
+					reason = "empty fingerprint"
+				case source.Fingerprint == row.Fingerprint:
+					reason = "self-reference"
+				}
+				out.lines = append(out.lines, "", "Unresolved runtime source: "+alertValue(source.Fingerprint), "  Reason: "+reason+".")
 				continue
 			}
 			kind := "Potential source"
@@ -94,27 +105,57 @@ func (s alertInhibitionSnapshot) relations(row alertRow) alertRelations {
 				kind = "Matching source (not runtime-confirmed)"
 			}
 			out.links = append(out.links, alertRelation{source.Source, kind})
-			out.lines = appendRelatedLabels(out.lines, kind, s.rows[source.Source])
-			if len(source.Rules) == 0 && s.err == nil {
-				out.lines = append(out.lines, "  No matching configured rule.")
-			}
-			for _, i := range source.Rules {
-				rule := s.index.Rules[i]
-				out.lines = append(out.lines, fmt.Sprintf("  Matching rule %d (local evaluation):", i+1))
-				out.lines = appendRuleValues(out.lines, "source_matchers", matcherStrings(rule.Source))
-				out.lines = appendRuleValues(out.lines, "target_matchers", matcherStrings(rule.Target))
-				out.lines = appendRuleValues(out.lines, "equal", rule.Equal)
-			}
+			src := s.rows[source.Source]
+			out.lines = appendRelatedLabels(out.lines, kind, src)
+			out.lines = s.appendMatchingRules(out.lines, source.Rules, src, row)
 		}
 	}
 	if len(targets) > 0 {
 		out.lines = append(out.lines, "", fmt.Sprintf("Inhibits (%d confirmed)", len(targets)))
-		for _, target := range targets {
-			out.links = append(out.links, alertRelation{target, "Confirmed target"})
-			out.lines = appendRelatedLabels(out.lines, "Target", s.rows[target])
+		for _, targetIndex := range targets {
+			target := s.rows[targetIndex]
+			out.links = append(out.links, alertRelation{targetIndex, "Confirmed target"})
+			out.lines = appendRelatedLabels(out.lines, "Confirmed target", target)
+			out.lines = s.appendMatchingRules(out.lines, s.index.MatchingRules(row.snapshotIndex, targetIndex), row, target)
 		}
 	}
 	return out
+}
+
+func (s alertInhibitionSnapshot) appendMatchingRules(lines []string, rules []int, source, target alertRow) []string {
+	if len(rules) == 0 && s.err == nil {
+		return append(lines, "  No configured rule matches this pair in the local snapshot.")
+	}
+	for _, i := range rules {
+		rule := s.index.Rules[i]
+		lines = append(lines, fmt.Sprintf("  Matching rule %d (local evaluation):", i+1))
+		lines = appendRuleValues(lines, "source_matchers", matcherStrings(rule.Source))
+		lines = appendRuleValues(lines, "target_matchers", matcherStrings(rule.Target))
+		var equal []string
+		missing := false
+		for _, key := range rule.Equal {
+			src, srcOK := equalLabelValue(source.Labels, key)
+			dst, dstOK := equalLabelValue(target.Labels, key)
+			if !srcOK || !dstOK {
+				missing = true
+				equal = append(equal, fmt.Sprintf("%s: source %s = target %s", strconv.QuoteToGraphic(key), src, dst))
+			} else {
+				equal = append(equal, strconv.QuoteToGraphic(key)+" = "+src)
+			}
+		}
+		lines = appendRuleValues(lines, "equal", equal)
+		if missing {
+			lines = append(lines, "      A missing label counts as empty.")
+		}
+	}
+	return lines
+}
+
+func equalLabelValue(set map[string]string, key string) (string, bool) {
+	if value, ok := set[key]; ok {
+		return strconv.QuoteToGraphic(value), true
+	}
+	return "<missing>", false
 }
 
 func appendRelatedLabels(lines []string, kind string, row alertRow) []string {
@@ -159,20 +200,27 @@ func (a *alertsState) relatedAlertName(link alertRelation) string {
 		name = append(name, row.Fingerprint)
 	}
 	kind := link.kind
-	if kind == "Matching source (not runtime-confirmed)" {
-		kind = "Matching source"
+	if kind == "Matching source (not runtime-confirmed)" || kind == "Potential source" {
+		kind = "Local match"
 	}
 	return kind + ": " + strings.Join(name, " · ")
 }
 
 func (m *Model) moveRelatedAlert(key string) {
+	if m.width < minWidth || m.height < minHeight {
+		return
+	}
 	a := &m.alerts
 	step := 1
 	if key == "pgup" || key == "pgdown" {
-		step = max(1, m.height-max(7, m.height/3))
+		step = max(1, m.alertRelatedRoom())
 	}
 	if key == "up" || key == "pgup" {
 		step = -step
 	}
 	a.relatedRow = max(0, min(a.relatedRow+step, len(a.detailRelations.links)-1))
+}
+
+func (m *Model) alertRelatedRoom() int {
+	return min(len(m.alerts.detailRelations.links), max(0, m.height-max(7, m.height/3)))
 }

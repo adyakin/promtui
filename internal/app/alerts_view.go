@@ -238,7 +238,7 @@ func alertTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05 UTC")
 }
 
-func alertDetailLines(a alertRow, now time.Time) []string {
+func alertDetailLines(a alertRow, now time.Time, inhibition []string) []string {
 	lines := []string{
 		"Overview",
 		"Alert: " + alertValue(a.Labels["alertname"]),
@@ -251,6 +251,7 @@ func alertDetailLines(a alertRow, now time.Time) []string {
 	if value := a.Annotations["value"]; value != "" {
 		lines = append(lines, "Evaluation value (annotation): "+value)
 	}
+	lines = append(lines, inhibition...)
 	lines = append(lines, "", "Annotations")
 	if len(a.Annotations) == 0 {
 		lines = append(lines, "—")
@@ -318,8 +319,7 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			}
 		}
 	case a.dialog == alertDetails:
-		name, lines = "Alert details", alertDetailLines(a.detail, now)
-		lines = append(lines, a.detailRelations.lines...)
+		name, lines = "Alert details", alertDetailLines(a.detail, now, a.detailRelations.lines)
 	case a.dialog == alertRelated:
 		name = "Related alerts"
 	case a.dialog == alertStatusDialog:
@@ -335,7 +335,7 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 	}
 	width = min(76, m.width-max(4, m.width/8))
 	if !a.help && a.dialog == alertRelated {
-		room = min(len(a.detailRelations.links), m.height-max(7, m.height/3))
+		room = m.alertRelatedRoom()
 		return
 	}
 	for _, line := range lines {

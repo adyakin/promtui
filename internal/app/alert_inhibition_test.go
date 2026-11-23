@@ -24,8 +24,8 @@ func TestAlertInhibitionDetailsNavigation(t *testing.T) {
 		case "/am/api/v2/alerts":
 			fmt.Fprint(w, `[
 				{"fingerprint":"source","labels":{"alertname":"HighLatency","severity":"critical","servicename":"payments"},"status":{"state":"active"}},
-				{"fingerprint":"target-a","labels":{"alertname":"HighLatency","severity":"warning","servicename":"payments","instance":"a"},"status":{"state":"suppressed","inhibitedBy":["source","missing"]}},
-				{"fingerprint":"target-b","labels":{"alertname":"HighLatency","severity":"warning","servicename":"payments","instance":"b"},"status":{"state":"suppressed","inhibitedBy":["source"]}},
+				{"fingerprint":"target-a","labels":{"alertname":"HighLatency","severity":"warning","servicename":"payments","instance":"a","region":""},"status":{"state":"suppressed","inhibitedBy":["source","missing","target-a"]}},
+				{"fingerprint":"target-b","labels":{"alertname":"HighLatency","severity":"warning","servicename":"payments","instance":"b","region":"different"},"status":{"state":"suppressed","inhibitedBy":["source"]}},
 				{"fingerprint":"potential","labels":{"alertname":"HighLatency","severity":"warning","servicename":"payments","instance":"c"},"status":{"state":"active"}},
 				{"fingerprint":"with-state","labels":{"alertname":"Unrelated","severity":"info"},"status":{"state":"inhibited"}}
 			]`)
@@ -33,7 +33,7 @@ func TestAlertInhibitionDetailsNavigation(t *testing.T) {
 			config := `inhibit_rules:
 - source_matchers: ['severity="critical"']
   target_matchers: ['severity="warning"']
-  equal: [alertname, servicename]`
+  equal: [alertname, servicename, region]`
 			_ = json.NewEncoder(w).Encode(map[string]any{"config": map[string]string{"original": config}})
 		default:
 			t.Errorf("unexpected endpoint: %s", r.URL.Path)
@@ -57,8 +57,9 @@ func TestAlertInhibitionDetailsNavigation(t *testing.T) {
 		return ansi.Strip(strings.Join(rows, "\n"))
 	}
 	text := detailText()
-	for _, want := range []string{"State: inhibited", "Confirmed source: HighLatency", "Confirmed source unavailable: missing",
-		"Matching rule 1 (local evaluation)", `severity="critical"`, "equal:"} {
+	for _, want := range []string{"State: inhibited", "Confirmed source: HighLatency", "Unresolved runtime source: missing",
+		"Matching rule 1 (local evaluation)", `severity="critical"`, "equal:", `"servicename" = "payments"`,
+		`"region": source <missing> = target ""`, "A missing label counts as empty", "self-reference"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in\n%s", want, text)
 		}
@@ -73,6 +74,13 @@ func TestAlertInhibitionDetailsNavigation(t *testing.T) {
 	press(m, tea.KeyEnter)
 	if a.detail.Fingerprint != "source" || !strings.Contains(detailText(), "Inhibits (2 confirmed)") {
 		t.Fatal("could not follow source hidden by filter")
+	}
+	text = detailText()
+	for _, want := range []string{"Confirmed target: HighLatency", "Matching rule 1 (local evaluation)",
+		`"region": source <missing> = target ""`, "No configured rule matches this pair"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in source details:\n%s", want, text)
+		}
 	}
 	press(m, 'i', tea.KeyDown, tea.KeyEnter)
 	if a.detail.Fingerprint != "target-b" {
@@ -90,10 +98,15 @@ func TestAlertInhibitionDetailsNavigation(t *testing.T) {
 	a.filter = ""
 	a.rebuild(a.rows[3].id, 0, now)
 	press(m, tea.KeyEnter)
-	if text := detailText(); !strings.Contains(text, "Potential source: HighLatency") || strings.Contains(text, "Confirmed source") {
+	if text := detailText(); !strings.Contains(text, "Potential source: HighLatency") ||
+		!strings.Contains(text, "No runtime inhibition reported") || strings.Contains(text, "Confirmed source") {
 		t.Fatal(text)
 	}
-	press(m, tea.KeyEsc)
+	press(m, 'i')
+	if screen := ansi.Strip(m.screen()); !strings.Contains(screen, "› Local match: HighLatency") {
+		t.Fatal(screen)
+	}
+	press(m, tea.KeyEsc, tea.KeyEsc)
 	a.rebuild(a.rows[4].id, 0, now)
 	press(m, tea.KeyEnter)
 	if text := detailText(); !strings.Contains(text, "No runtime source reference reported.") {
@@ -131,6 +144,12 @@ func TestAlertInhibitionUnavailableConfigIsNonfatal(t *testing.T) {
 	press(m, 'i', tea.KeyEnter)
 	if m.alerts.detail.Fingerprint != "source" {
 		t.Fatal("status error prevented runtime link navigation")
+	}
+	_, rows, _, _ = m.alertDialog(now)
+	text = ansi.Strip(strings.Join(rows, "\n"))
+	if !strings.Contains(text, "Rule explanations unavailable") || !strings.Contains(text, "Confirmed target: Target") ||
+		strings.Contains(text, "No configured rule matches") {
+		t.Fatal(text)
 	}
 	if m.onAlertsTick(now.Add(alertRefreshInterval)) == nil {
 		t.Fatal("background refresh did not start")
