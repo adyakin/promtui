@@ -304,7 +304,9 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 	if a.input.Focused() && !a.help && a.dialog == alertNoDialog {
 		switch key {
 		case "enter":
-			if a.searchSuggestionKey(key) {
+			before := a.input.Value()
+			a.searchSuggestionKey(key)
+			if a.input.Value() != before {
 				a.rebuild(a.selection(), a.row, time.Now())
 			}
 			a.filter = a.input.Value()

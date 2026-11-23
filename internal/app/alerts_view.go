@@ -49,7 +49,7 @@ func (m *Model) alertsFooter() string {
 		hints, back = []string{"↑↓ Scroll", "? Help"}, "Esc Close"
 	case a.input.Focused():
 		hints, back = []string{"Enter Apply", "Alt+S Status", "Alt+0–5 Tabs"}, "Esc Cancel"
-		if m.alertSuggestionsLayer() != nil {
+		if len(a.suggestions.matches) > 0 {
 			hints = append([]string{"↑↓ Suggestion"}, hints...)
 		}
 		if len(m.opt.Connections) > 0 {
