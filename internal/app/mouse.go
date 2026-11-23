@@ -146,7 +146,14 @@ func (m *Model) handleMouse(msg tea.MouseMsg, now time.Time) tea.Cmd {
 	}
 	p := msg.Mouse()
 	point := image.Pt(p.X, p.Y)
+	if !point.In(m.chart.plot) {
+		m.chart.hover = time.Time{}
+	}
 	switch msg.(type) {
+	case tea.MouseMotionMsg:
+		if m.canInspectGraph() && point.In(m.chart.plot) && m.chart.displayed == m.graphPlace() {
+			m.chart.hover = inspectionTime(m.chart.result, p.X-m.chart.plot.Min.X, m.chart.plot.Dx())
+		}
 	case tea.MouseWheelMsg:
 		m.mouse.last = mouseClick{}
 		if p.Mod != 0 || p.Button != tea.MouseWheelUp && p.Button != tea.MouseWheelDown {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"math"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 type placement struct{ revision, row, col, cols, rows, cw, ch int }
 type graphFrame struct {
 	key    placement
+	plot   image.Rectangle
 	packet string
 	err    error
 }
@@ -28,6 +30,9 @@ type graphState struct {
 	enabled                    bool
 	selected, revision, cw, ch int
 	visible                    []bool
+	names                      []string
+	plot                       image.Rectangle // zero-based screen cells for the displayed plot
+	hover                      time.Time
 	wanted, displayed, failed  placement
 	renderCancel               context.CancelFunc
 	sending, everSent          bool
@@ -40,6 +45,8 @@ func (m *Model) setGraphResult(r query.Result) {
 	m.isolated = nil
 	g.revision++
 	g.result = r
+	g.names = graphSeriesNames(r.Series)
+	g.hover = time.Time{}
 	g.selected = 0
 	g.enabled = m.opt.Graphics && !r.Start.IsZero() && len(r.Series) > 0
 	g.visible = make([]bool, len(r.Series))
@@ -68,7 +75,7 @@ func (m *Model) graphPlace() placement {
 	w := m.workspace()
 	// Keep the raster inside the frame and above the legend. Floating
 	// dialogs paint opaque cells above the image without moving it.
-	rows, cols := w.bottomY-w.bodyY-1, m.width-2
+	rows, cols := w.bottomY-w.bodyY-1-m.inspectionReserve(w), m.width-2
 	if rows < 5 || cols < 32 {
 		return placement{}
 	}
@@ -92,7 +99,7 @@ func (m *Model) legend() string {
 		if !g.visible[i] {
 			state = "○"
 		}
-		entry := lipgloss.NewStyle().Foreground(lipgloss.Color(graph.Color(i))).Render(state) + " " + seriesName(g.result.Series[i])
+		entry := lipgloss.NewStyle().Foreground(lipgloss.Color(graph.Color(i))).Render(state) + " " + g.names[i]
 		if n == 0 {
 			entry = fmt.Sprintf("› %d/%d %s", row+1, count, entry)
 		}
@@ -123,6 +130,9 @@ func (m *Model) legend() string {
 func (m *Model) syncGraph(msg tea.Msg) tea.Cmd {
 	g := &m.chart
 	k := m.graphPlace()
+	if k != g.displayed || !m.canInspectGraph() {
+		g.hover = time.Time{}
+	}
 	if k != g.wanted {
 		if g.renderCancel != nil {
 			g.renderCancel()
@@ -147,6 +157,7 @@ func (m *Model) syncGraph(msg tea.Msg) tea.Cmd {
 				g.err = v.err.Error()
 			} else {
 				g.displayed = k
+				g.plot = v.plot
 				g.everSent = true
 				g.sending = true
 				return tea.Raw(graphPacket(v.packet))
@@ -159,6 +170,7 @@ func (m *Model) syncGraph(msg tea.Msg) tea.Cmd {
 	if g.displayed.cols != 0 && (k.cols == 0 || g.failed == k || k.row != g.displayed.row ||
 		k.col != g.displayed.col || k.rows != g.displayed.rows || k.cols != g.displayed.cols) {
 		g.displayed = placement{}
+		g.plot = image.Rectangle{}
 		g.sending = true
 		return tea.Raw(graphPacket(kitty.Clear()))
 	}
@@ -191,10 +203,12 @@ func (m *Model) syncGraph(msg tea.Msg) tea.Cmd {
 		}
 		w, h := float64(k.cols*cw), float64(k.rows*ch)
 		scale := math.Min(1, math.Min(3200/w, 2000/h))
-		data, err := p.Render(ctx, int(w*scale), int(h*scale), float64(ch)*.75*scale)
+		pw, ph := int(w*scale), int(h*scale)
+		data, bounds, err := p.Render(ctx, pw, ph, float64(ch)*.75*scale)
 		f := graphFrame{key: k, err: err}
 		if err == nil {
 			f.packet = kitty.Frame(data, id, k.row, k.col, k.cols, k.rows)
+			f.plot = k.plotCells(bounds, pw, ph)
 		}
 		return f
 	}

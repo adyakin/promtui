@@ -39,15 +39,20 @@ var typeface = func() *truetype.Font {
 
 func Color(i int) string { return palette[i%len(palette)] }
 
-func (p Plot) Render(ctx context.Context, w, h int, fontSize float64) ([]byte, error) {
+// Bounds are the plot edges in image pixels, excluding the axis labels.
+type Bounds struct {
+	Left, Top, Right, Bottom float64
+}
+
+func (p Plot) Render(ctx context.Context, w, h int, fontSize float64) ([]byte, Bounds, error) {
 	if w < 160 || h < 80 || w > 3200 || h > 2000 || !p.End.After(p.Start) {
-		return nil, fmt.Errorf("graph viewport too small or invalid")
+		return nil, Bounds{}, fmt.Errorf("graph viewport too small or invalid")
 	}
 	lo, hi := math.Inf(1), math.Inf(-1)
 	for _, s := range p.Lines {
 		for i, v := range s.Samples {
 			if i%1024 == 0 && ctx.Err() != nil {
-				return nil, ctx.Err()
+				return nil, Bounds{}, ctx.Err()
 			}
 			y := float64(v.Value)
 			if !math.IsNaN(y) && !math.IsInf(y, 0) {
@@ -57,7 +62,7 @@ func (p Plot) Render(ctx context.Context, w, h int, fontSize float64) ([]byte, e
 		}
 	}
 	if math.IsInf(lo, 1) {
-		return nil, ErrNoData
+		return nil, Bounds{}, ErrNoData
 	}
 	// Normalize before subtracting: even [-MaxFloat64, MaxFloat64] fits.
 	scale := max(math.Abs(lo), math.Abs(hi))
@@ -138,7 +143,7 @@ func (p Plot) Render(ctx context.Context, w, h int, fontSize float64) ([]byte, e
 		}
 		for i, v := range s.Samples {
 			if i%1024 == 0 && ctx.Err() != nil {
-				return nil, ctx.Err()
+				return nil, Bounds{}, ctx.Err()
 			}
 			t, y := v.Timestamp.Time(), float64(v.Value)
 			if math.IsNaN(y) || math.IsInf(y, 0) {
@@ -161,12 +166,12 @@ func (p Plot) Render(ctx context.Context, w, h int, fontSize float64) ([]byte, e
 		flush()
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, Bounds{}, err
 	}
 	var buf bytes.Buffer
 	enc := png.Encoder{CompressionLevel: png.BestSpeed}
 	if err := enc.Encode(&buf, d.Image()); err != nil {
-		return nil, err
+		return nil, Bounds{}, err
 	}
-	return buf.Bytes(), nil
+	return buf.Bytes(), Bounds{left, top, right, bottom}, nil
 }
