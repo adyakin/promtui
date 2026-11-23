@@ -18,32 +18,23 @@ import (
 )
 
 type alertMatcherFilter struct {
-	matchers []savedalerts.Matcher // Runtime values, never written back to a template.
-	match    func(map[string]string) bool
-	name     string
-	values   parameters.Values
-	defs     []parameters.Parameter
+	matchers     []savedalerts.Matcher // Runtime values, never written back to a template.
+	match        func(map[string]string) bool
+	name         string
+	searchEdited bool // Keep the matchers active even after the name is hidden.
+	params       string
 }
 
-func (f alertMatcherFilter) description() string {
-	if f.match == nil {
-		return ""
-	}
-	if f.name == "" {
-		return "Unsaved label filter"
-	}
-	var fields []string
-	for _, p := range f.defs {
-		value := f.values[p.Name]
+func alertFilterParameters(defs []parameters.Parameter, values parameters.Values) string {
+	fields := make([]string, 0, len(defs))
+	for _, p := range defs {
+		value := values[p.Name]
 		if value == "" || strings.ContainsAny(value, " \n\t\r") {
 			value = strconv.Quote(value)
 		}
 		fields = append(fields, p.Name+"="+value)
 	}
-	if len(fields) == 0 {
-		return f.name
-	}
-	return f.name + " (" + strings.Join(fields, ", ") + ")"
+	return strings.Join(fields, ", ")
 }
 
 func (m *Model) setAlertMatchers(f alertMatcherFilter) {
@@ -348,7 +339,8 @@ func (m *Model) loadAlertFilter(item savedalerts.Filter) tea.Cmd {
 		if err != nil {
 			return nil, err
 		}
-		m.setAlertMatchers(alertMatcherFilter{matchers: matchers, match: match, name: item.Name, values: values, defs: item.Parameters})
+		m.setAlertMatchers(alertMatcherFilter{matchers: matchers, match: match, name: item.Name,
+			params: alertFilterParameters(item.Parameters, values)})
 		m.closeAlertSaved()
 		return nil, nil
 	}
@@ -402,8 +394,10 @@ func (m *Model) finishAlertSave(next savedalerts.Snapshot, err error) {
 		return
 	}
 	if d.action == addSaved {
-		m.alerts.structured.name = next.Filters()[len(d.items)].Name
-		m.alerts.structured.values, m.alerts.structured.defs = nil, nil
+		active := &m.alerts.structured
+		active.name = next.Filters()[len(d.items)].Name
+		active.searchEdited = false
+		active.params = ""
 		m.closeAlertSaved()
 		return
 	}
@@ -413,7 +407,7 @@ func (m *Model) finishAlertSave(next savedalerts.Snapshot, err error) {
 		case renameSaved:
 			active.name = next.Filters()[d.target].Name
 		case deleteSaved:
-			active.name, active.values, active.defs = "", nil, nil
+			active.name = ""
 		}
 	}
 	selected := alertFilterItem(d.target)

@@ -80,7 +80,7 @@ func TestAlertRows(t *testing.T) {
 	checkOrder("inhib", "late", "early")
 }
 
-func TestAlertFilterSearchesOnlyTableColumns(t *testing.T) {
+func TestAlertFilterPreservesSingleTermScope(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	critical := testAlert("fingerprint-warning", "HaproxyHasNoAliveBackends", "critical", "active", now.Add(-8*24*time.Hour-9*time.Hour))
 	critical.Labels["instance"] = "proxy-west"
@@ -101,7 +101,7 @@ func TestAlertFilterSearchesOnlyTableColumns(t *testing.T) {
 		{"prxywst", critical.Fingerprint},
 		{"8d9h", critical.Fingerprint},
 		{"runbook", ""},
-		{"fleet recovery", ""},
+		{"fleet recovery", critical.Fingerprint},
 		{"certificate-ops", ""},
 		{"prometheus", ""},
 		{"fingerprint", ""},

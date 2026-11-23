@@ -193,6 +193,9 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 		}
 	}
 	status := a.status()
+	if a.structured.params != "" {
+		status += " · Matcher parameters: " + ui.Plain(a.structured.params)
+	}
 	if a.silenceNotice != "" {
 		status = a.silenceNotice + " · " + status
 	}
@@ -216,7 +219,16 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 
 func (m *Model) alertsHeading() string {
 	view := ui.Plain(m.alertViewName())
-	filter := ui.Plain(m.alerts.structured.description())
+	a := &m.alerts
+	filter := ""
+	if a.structured.match != nil {
+		switch {
+		case a.structured.name == "":
+			filter = "Unsaved label filter"
+		case !a.structured.searchEdited && a.currentFilter() == a.filter:
+			filter = "Search: " + ui.Plain(a.structured.name)
+		}
+	}
 	if view == "" {
 		if filter != "" {
 			return "Alerts | " + filter
@@ -227,18 +239,20 @@ func (m *Model) alertsHeading() string {
 	if filter == "" {
 		return heading
 	}
-	heading += " | " + filter
-	if ansi.StringWidth(heading) <= m.width-7 {
-		return heading
+	const compact, full, separator = "Alerts | ", "Alerts | View: ", " | "
+	prefix := full
+	// Shorten the view label first so the saved search stays identifiable.
+	if ansi.StringWidth(heading+separator+filter) > m.width-7 {
+		prefix = compact
 	}
-	// At small widths, keep both names visible rather than clipping the filter
-	// after a view name. Prefer the saved name over its parameter summary.
-	if name := m.alerts.structured.name; name != "" {
-		filter = ui.Plain(name)
+	room := m.width - 7 - len(prefix) - len(separator)
+	filterWidth := ansi.StringWidth(filter)
+	const filterMinWidth = len("Search: ") + 2 // Label, one character of the name, and ellipsis.
+	if room < min(filterWidth, filterMinWidth)+1 {
+		return compact + filter
 	}
-	room := max(2, m.width-7-len("Alerts |  | "))
-	viewWidth := min(ansi.StringWidth(view), room-min(room/2, ansi.StringWidth(filter)))
-	return "Alerts | " + ansi.Truncate(view, viewWidth, "…") + " | " + ansi.Truncate(filter, room-viewWidth, "…")
+	viewWidth := min(ansi.StringWidth(view), room-min(filterWidth, filterMinWidth))
+	return prefix + ansi.Truncate(view, viewWidth, "…") + separator + ansi.Truncate(filter, room-viewWidth, "…")
 }
 
 func alertSeverityTint(severity string) color.Color {
@@ -385,7 +399,7 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll status", "Esc or ?: return to status"}
 		default:
 			lines = []string{"↑ / ↓: select an alert", "PgUp / PgDn: move one page", "Home / End: first / last alert",
-				"Enter: open details", "/: fuzzy-filter alerts (↑/↓: suggest alert names, Enter: apply, Esc: cancel)",
+				"Enter: open details", "/: filter by terms or field:value (↑/↓: suggest, Enter: apply, Esc: cancel)",
 				"m: edit label matchers · x: clear label matchers",
 				"Ctrl+O: open filters or views · Ctrl+S: save active matchers",
 				"D: restore the connection's default view",

@@ -85,6 +85,17 @@ func countAlerts(rows []alertRow) alertCounts {
 
 var defaultAlertFields = [...]string{"state", "severity", "alertname", "instance", "duration"}
 
+func (a alertRow) searchField(field string, now time.Time) string {
+	switch field {
+	case "state", "duration":
+		return a.field(field, now)
+	}
+	if strings.HasPrefix(field, "labels.") || strings.HasPrefix(field, "annotations.") {
+		return a.field(field, now)
+	}
+	return a.Labels[field]
+}
+
 func (a alertRow) field(field string, now time.Time) string {
 	if label, ok := config.LabelName(field); ok {
 		return a.Labels[label]

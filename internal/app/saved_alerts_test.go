@@ -131,7 +131,8 @@ func TestSavedAlertTemplateUpdatePreservesParameters(t *testing.T) {
 	}
 	press(m, tea.KeyEsc, tea.KeyEnter)
 	savedCtrl(m, tea.KeyEnter)
-	savedText(t, m.screen(), "Service (service=srv.*)")
+	savedText(t, m.screen(), "Search: Service")
+	savedText(t, m.screen(), "Matcher parameters: service=srv.*")
 	savedCtrl(m, 'o')
 	press(m, 'u')
 	if m.alerts.saved.mode != alertSavedTemplate || !strings.Contains(m.alerts.saved.template.text.Value(), "${service}") {
