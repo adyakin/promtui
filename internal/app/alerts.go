@@ -48,6 +48,7 @@ type alertsState struct {
 	counts        alertCounts
 	row           int
 	view          config.TableView
+	cachedTable   alertTable
 	sort          string
 	sorts         []viewSort
 	filter        string
@@ -250,6 +251,7 @@ func (m *Model) onAlertsCompleted(v alertsCompleted, now time.Time) tea.Cmd {
 		id, row := a.selection(), a.row
 		a.lastOK = now
 		a.rows = make([]alertRow, 0, len(v.rows))
+		a.cachedTable = alertTable{}
 		for i, alert := range v.rows {
 			row := newAlertRow(m.opt.Connection.AlertmanagerURL, alert)
 			row.snapshotIndex = i

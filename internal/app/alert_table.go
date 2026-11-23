@@ -31,6 +31,14 @@ type alertTable struct {
 	cols            []alertTableColumn
 }
 
+// Re-sample on resize, view change or refresh, not on every repaint or scroll.
+func (a *alertsState) tableForWidth(width int, now time.Time) alertTable {
+	if a.cachedTable.width != width {
+		a.cachedTable = a.tableLayout(width, now)
+	}
+	return a.cachedTable
+}
+
 // width is the frame's interior width, excluding borders. Alerts uses a
 // position counter in the frame header rather than an in-body scrollbar.
 func (a *alertsState) tableLayout(width int, now time.Time) alertTable {

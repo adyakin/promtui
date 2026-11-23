@@ -176,7 +176,7 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 			room := m.alertPage()
 			first := min(max(0, a.row-room/2), max(0, len(a.visible)-room))
 			last := min(first+room, len(a.visible))
-			table := a.tableLayout(width, now)
+			table := a.tableForWidth(width, now)
 			body[2] = table.header()
 			for i := first; i < last; i++ {
 				body[3+i-first] = table.row(i == a.row, a.visible[i], now)

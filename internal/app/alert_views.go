@@ -53,6 +53,7 @@ func (a *alertsState) setViewColumns(columns []config.Column) {
 	// filtered/sorted rows and selection.
 	sortTitle := viewSortTitle(a.sorts, a.sort)
 	a.view.Columns = columns
+	a.cachedTable = alertTable{}
 	a.sorts = viewSorts(config.AlertsView, defaultAlertSorts, columns)
 	if a.sort != "" && !slices.ContainsFunc(a.sorts, func(s viewSort) bool { return s.field == a.sort }) {
 		// Keep the current sort usable even if its column isn't displayed.
