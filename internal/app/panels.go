@@ -59,13 +59,6 @@ func (m *Model) openRange() {
 	m.rangeRow = max(0, slices.Index(m.ranges, m.opt.Window))
 }
 
-func seriesName(s query.Series) string {
-	if s.Labels == "" || s.Labels == "{}" {
-		return ui.Plain(s.Name)
-	}
-	return ui.Plain(s.Labels)
-}
-
 func (m *Model) openSeries() {
 	m.openPanel(seriesKeys)
 	m.seriesFilter, m.filtering = "", false
@@ -80,7 +73,7 @@ func (m *Model) refreshSeries() {
 		return
 	}
 	for i, s := range m.chart.result.Series {
-		if matchesSeries(filter, s) {
+		if filter.matches(m.chart.names[i]) || matchesSeries(filter, s) {
 			m.filtered = append(m.filtered, i)
 		}
 	}
@@ -396,7 +389,7 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 			if m.chart.visible[index] {
 				state = "[x]"
 			}
-			row(state+" "+seriesName(m.chart.result.Series[index]), graph.Color(index), i == m.seriesRow)
+			row(state+" "+m.chart.names[index], graph.Color(index), i == m.seriesRow)
 		}
 	case labelKeys:
 		name = "Series labels"

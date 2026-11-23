@@ -22,7 +22,7 @@ func TestFlatSeriesWithGap(t *testing.T) {
 		}
 		s = append(s, model.SamplePair{Timestamp: 3000, Value: 42}, model.SamplePair{Timestamp: 4000, Value: 42})
 		p := Plot{start, start.Add(4 * time.Second), time.Second, []Line{{0, s}}}
-		b, err := p.Render(t.Context(), 640, 320, 14)
+		b, _, err := p.Render(t.Context(), 640, 320, 14)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -53,7 +53,7 @@ func TestFlatSeriesWithGap(t *testing.T) {
 }
 func TestNoFiniteData(t *testing.T) {
 	p := Plot{Start: time.Now(), End: time.Now().Add(time.Hour), Lines: []Line{{Samples: []model.SamplePair{{Value: model.SampleValue(math.Inf(1))}}}}}
-	if _, err := p.Render(t.Context(), 480, 200, 12); !errors.Is(err, ErrNoData) {
+	if _, _, err := p.Render(t.Context(), 480, 200, 12); !errors.Is(err, ErrNoData) {
 		t.Fatal(err)
 	}
 }

@@ -39,6 +39,8 @@ setting does not change the in-app status or error messages.
 
 Set `ui.mouse: true` to click tabs and select visible rows, double-click to
 open supported row details, and use the wheel in scrollable panes and dialogs.
+Hover over a range graph to inspect the timestamp and visible series values
+without running another query.
 Mouse reporting is optional and works over SSH when the terminal forwards
 mouse events. Set `ui.mouse: false` and restart PromTUI to restore uncaptured
 terminal mouse behavior. Many terminals also let you hold Shift to select

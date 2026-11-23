@@ -257,6 +257,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.MouseMsg:
 		return m, m.handleMouse(v, time.Now())
+	case tea.BlurMsg:
+		m.chart.hover = time.Time{}
+		return m, nil
 	case urlFeedbackExpired:
 		if uint64(v) == m.urlFeedback {
 			m.showURLFeedback = false
@@ -587,6 +590,10 @@ func (m *Model) View() tea.View {
 	v.Cursor = cursor
 	if m.opt.Mouse {
 		v.MouseMode = tea.MouseModeCellMotion
+		if m.activeTab == promQLTab && m.chart.enabled {
+			v.MouseMode = tea.MouseModeAllMotion
+			v.ReportFocus = true
+		}
 	}
 	return v
 }
@@ -685,6 +692,13 @@ func (m *Model) promQLScreen() (string, *tea.Cursor) {
 			}
 		}
 		body[room-1] = m.legend()
+		if !m.chart.hover.IsZero() {
+			if rows := m.inspectionReserve(w); rows > 0 {
+				m.renderInspection(body[room-1-rows : room-1])
+			} else {
+				m.renderInspection(body[room-1:])
+			}
+		}
 	default:
 		copy(body, strings.Split(m.table.View(inner, room), "\n"))
 		m.mouseRegion(image.Rect(1, w.bodyY, m.width-1, w.bottomY), func(key string) tea.Cmd {
