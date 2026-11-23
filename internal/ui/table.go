@@ -28,6 +28,16 @@ func Plain(s string) string {
 	}, s)
 }
 
+// Multiline sanitizes untrusted terminal text without flattening paragraphs.
+func Multiline(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r != '\n' && unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, strings.ReplaceAll(s, "\r\n", "\n"))
+}
+
 func (t *Table) Move(n int) {
 	if len(t.Rows) > 0 {
 		if row := min(max(t.Row+n, 0), len(t.Rows)-1); row != t.Row {
@@ -72,6 +82,37 @@ func (t Table) Fields(i int) (string, string, string) {
 	}
 	return p.Timestamp.Time().UTC().Format("2006-01-02 15:04:05.000"), v, fmt.Sprintf("%d/%d", j+1, len(s.Samples))
 }
+
+func (t Table) viewport(h int) (header, detail, first, end int) {
+	if h < 1 || len(t.Rows) == 0 {
+		return
+	}
+	if h >= 2 {
+		header = 1
+	}
+	room := h - header
+	if t.Expanded {
+		detail = min(room-1, 4, 1+len(t.Rows[t.Row].Samples))
+	}
+	room -= detail
+	first = max(0, t.Row-room+1)
+	end = min(first+room, len(t.Rows))
+	return
+}
+
+// VisibleRows reports data row indices and offsets, excluding the header and
+// expanded sample details. It shares the same viewport as View.
+func (t Table) VisibleRows(h int, visit func(index, y int)) {
+	header, detail, first, end := t.viewport(h)
+	for i := first; i < end; i++ {
+		y := header + i - first
+		if i > t.Row {
+			y += detail
+		}
+		visit(i, y)
+	}
+}
+
 func (t Table) View(w, h int) string {
 	if h < 1 || len(t.Rows) == 0 {
 		return ""
@@ -85,18 +126,11 @@ func (t Table) View(w, h int) string {
 		}
 		lines = append(lines, s)
 	}
-	room := h
-	if h >= 2 {
+	header, detail, first, end := t.viewport(h)
+	if header > 0 {
 		line("  ", t.columns(w, "Value", "Series", "Sample", "UTC"), false)
-		room--
 	}
-	detail := 0
-	if t.Expanded {
-		detail = min(room-1, 4, 1+len(t.Rows[t.Row].Samples))
-	}
-	room -= detail
-	first := max(0, t.Row-room+1)
-	for i := first; i < min(first+room, len(t.Rows)); i++ {
+	for i := first; i < end; i++ {
 		prefix := "  "
 		if i == t.Row {
 			prefix = "› "

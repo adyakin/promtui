@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"image/color"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +38,9 @@ func (m *Model) targetsFooter() string {
 		return format([]string{targetSelectHint, "Enter Apply"}, "Esc Cancel")
 	case targetDetails, targetHelp, targetStatus:
 		hints := []string{"↑↓ Scroll"}
+		if a.dialog == targetDetails && (webLink(a.detail.ScrapeURL) || webLink(a.detail.GlobalURL)) {
+			hints = append(hints, "u Copy URL")
+		}
 		if a.dialog == targetDetails && len(a.detail.Labels) != 0 {
 			hints = append(hints, "y Copy labels")
 		}
@@ -191,11 +196,16 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 	case hasError:
 		clear(body)
 		meta = renderPaneError(body, m.targetErrorRows(), a.errorOffset)
+		m.mouseRegion(image.Rect(1, 2, m.width-1, m.height-3), m.paneKey)
 	case len(a.visible) > 0:
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
 		room := m.targetPage()
-		first := min(max(0, a.row-room/2), max(0, len(a.visible)-room))
+		first := dialogStart(a.row, len(a.visible), room)
 		last := min(first+room, len(a.visible))
+		m.mouseTable("targets", first, last, func(i int) string { return a.visible[i].id }, func(i int) { a.row = i }, !a.input.Focused(), func(key string) tea.Cmd {
+			a.row = targetNavigate(key, a.row, len(a.visible), room)
+			return nil
+		})
 		if a.view.Columns == nil {
 			var headings [len(defaultTargetFields)]string
 			for i, field := range defaultTargetFields {
@@ -208,14 +218,14 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 				for j, field := range defaultTargetFields {
 					values[j] = alertValue(row.displayField(field, now))
 				}
-				body[3+i-first] = targetColumns(width, i == a.row, values)
+				body[tableDataStart+i-first] = targetColumns(width, i == a.row, values)
 			}
 		} else {
 			table := layoutViewTable(config.TargetsView, a.view.Columns, width)
 			body[2] = table.header()
 			for i := first; i < last; i++ {
 				row := a.visible[i]
-				body[3+i-first] = table.row(i == a.row, func(field string, _ int) (string, color.Color) {
+				body[tableDataStart+i-first] = table.row(i == a.row, func(field string, _ int) (string, color.Color) {
 					value := row.displayField(field, now)
 					if field == "health" {
 						return value, targetHealthTint(value)
@@ -254,6 +264,9 @@ func (m *Model) targetsScreen(now time.Time) (string, *tea.Cursor) {
 	}
 	if a.dialog == targetDetails && a.copyStatus != "" {
 		status = a.copyStatus + " · " + status
+	}
+	if a.dialog == targetDetails && m.showURLFeedback {
+		status = "URL sent to clipboard · " + status
 	}
 	base := strings.Join([]string{m.header(targetsTab), frame("Targets", meta, body, m.width, true),
 		lipgloss.NewStyle().Width(m.width).Render(ansi.Truncate(" "+status, m.width, "…")), m.footer()}, "\n")
@@ -370,6 +383,20 @@ func (m *Model) targetTextDialog() (name string, rows []string, width, room int)
 		"0–5 Tabs (Alt+0–5 while typing) · c Connections · q Quit"}
 	if a.dialog == targetDetails {
 		name, lines = "Target details", targetDetailLines(a.detail)
+		inLabels := false
+		for _, line := range lines {
+			if line == "" {
+				inLabels = true
+			}
+			if inLabels {
+				if key, value, ok := strings.Cut(line, "="); ok {
+					rows = append(rows, wrappedStyled(detailField(key, "=", value, false), width-4, false)...)
+					continue
+				}
+			}
+			rows = append(rows, wrappedStyled(detailLine(line, !inLabels, "Labels", "Discovered labels"), width-4, false)...)
+		}
+		return name, rows, width, min(room, len(rows))
 	} else if a.dialog == targetStatus {
 		name, lines = "Targets status", []string{}
 		for _, src := range a.sources {
@@ -399,11 +426,14 @@ func (m *Model) targetDialogLayer() *lipgloss.Layer {
 	var name, meta string
 	var rows []string
 	width := 0
+	first, end := 0, 0
+	var linkRows []string
 	if a.dialog == targetSources {
 		name = "Target Sources"
 		width, _ = m.targetDialogSize()
 		total, page := len(a.sources)+1, m.targetSourcePage()
-		start := min(max(0, a.dialogRow-page/2), max(0, total-page))
+		start := dialogStart(a.dialogRow, total, page)
+		first, end = start, min(start+page, total)
 		for i := start; i < min(start+page, total); i++ {
 			marker, text := "  ", "All sources"
 			if i == a.source {
@@ -438,13 +468,20 @@ func (m *Model) targetDialogLayer() *lipgloss.Layer {
 		var page int
 		name, content, width, page = m.targetTextDialog()
 		start := min(a.dialogRow, len(content)-page)
+		if a.dialog == targetDetails {
+			linkRows = content[start : start+page]
+		}
 		for _, line := range content[start : start+page] {
-			rows = append(rows, dialogSurface.Render(" "+line))
+			rows = append(rows, detailDialogRow(" "+line))
 		}
 		if page < len(content) {
 			meta = fmt.Sprintf("%d–%d/%d", start+1, start+page, len(content))
 		}
 	}
-	return lipgloss.NewLayer(renderFrame(name, meta, rows, width, true, dialogSurface)).
-		X((m.width - width) / 2).Y((m.height - len(rows) - 3) / 2).Z(1)
+	x, y := (m.width-width)/2, (m.height-len(rows)-3)/2
+	m.mouseDialog(x, y, width, len(rows), m.paneKey)
+	m.mouseRows(x+1, y+1, width-2, first, end, "target sources", strconv.Itoa,
+		func(i int) tea.Cmd { a.dialogRow = i; return nil }, nil)
+	m.mouseLinks(x+2, y+1, linkRows)
+	return lipgloss.NewLayer(renderFrame(name, meta, rows, width, true, dialogSurface)).X(x).Y(y).Z(1)
 }

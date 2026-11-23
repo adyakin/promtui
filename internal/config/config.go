@@ -52,11 +52,16 @@ type terminalSettings struct {
 	ProgramStatus bool `toml:"program_status" yaml:"program_status"`
 }
 
+type uiSettings struct {
+	Mouse bool `toml:"mouse" yaml:"mouse"`
+}
+
 type settings struct {
 	SilenceCreator string           `toml:"silence_creator" yaml:"silence_creator"`
 	General        generalSettings  `toml:"general" yaml:"general"`
 	Query          querySettings    `toml:"query" yaml:"query"`
 	Terminal       terminalSettings `toml:"terminal" yaml:"terminal"`
+	UI             uiSettings       `toml:"ui" yaml:"ui"`
 }
 
 type Config struct {

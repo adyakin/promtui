@@ -21,6 +21,7 @@ PromTUI never rewrites either file.
 | `query.default_range` | `1h` |
 | `query.max_series` | `500` |
 | `terminal.program_status` | `true`; reports explicit PromQL query status to the terminal via OSC 7501 |
+| `ui.mouse` | `false`; enables optional mouse reporting |
 | `silence_creator` | Empty; optional editable default for the Created by field in new silence drafts |
 | `connections` | One connection, `local`, at `http://localhost:9090` |
 | `insecure_skip_verify` | `false` |
@@ -33,6 +34,24 @@ are supported.
 
 Set `terminal.program_status` to `false` to suppress OSC 7501 reports. The
 setting does not change the in-app status or error messages.
+
+## Mouse and terminal links
+
+Set `ui.mouse: true` to click tabs and select visible rows, double-click to
+open supported row details, and use the wheel in scrollable panes and dialogs.
+Mouse reporting is optional and works over SSH when the terminal forwards
+mouse events. Set `ui.mouse: false` and restart PromTUI to restore uncaptured
+terminal mouse behavior. Many terminals also let you hold Shift to select
+text while mouse reporting is on.
+
+Target and alert details show HTTP(S) URLs as terminal hyperlinks (OSC 8).
+Use your terminal's usual modifier-click to open them. Press `u` in details
+to copy the scrape or generator URL; with mouse reporting on, a plain left
+click on any visible part of a link copies that URL. Clipboard writes go
+to your local terminal over OSC 52, including over SSH. If the terminal or
+multiplexer blocks OSC 52, allow it in its settings or select and copy the
+text manually. PromTUI does not open a browser or check whether links are
+reachable.
 
 ## Scrape target sources
 

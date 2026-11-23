@@ -46,7 +46,7 @@ func TestRulesTreeSearchAndPromQL(t *testing.T) {
 		t.Fatalf("alert selection = %+v", n)
 	}
 	for _, text := range []string{"Rule: Shared", "Value: 7", "Backend overloaded"} {
-		if details := strings.Join(rulesDetails(s.selection(), 60), "\n"); !strings.Contains(details, text) {
+		if details := ansi.Strip(strings.Join(rulesDetails(s.selection(), 60), "\n")); !strings.Contains(details, text) {
 			t.Fatalf("missing %q in %q", text, details)
 		}
 	}

@@ -38,6 +38,23 @@ func TestProgramStatusConfig(t *testing.T) {
 	}
 }
 
+func TestMouseConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name, source string
+		want         bool
+	}{
+		{"config.yaml", "ui:\n  mouse: true\n", true},
+		{"config.yaml", "ui:\n  mouse: false\n", false},
+		{"config.yaml", "general: {}\n", false},
+		{"config.toml", "[ui]\nmouse = true\n", true},
+	} {
+		cfg, err := decode(tc.name, []byte(tc.source))
+		if err != nil || cfg.UI.Mouse != tc.want || !cfg.Terminal.ProgramStatus {
+			t.Errorf("decode %q: mouse=%v, program status=%v, err=%v", tc.source, cfg.UI.Mouse, cfg.Terminal.ProgramStatus, err)
+		}
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	c, err := Load(path, true)

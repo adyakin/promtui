@@ -93,7 +93,7 @@ func (m *Model) savedTemplateOverlay(t *savedYAML, title, name string, err error
 	if room > 2 {
 		text(name + " · YAML")
 	}
-	lines := strings.Split(ansi.Strip(t.text.View()), "\n")
+	lines := strings.Split(ui.HighlightYAML(detailText(ansi.Strip(t.text.View())), yamlStyles), "\n")
 	caret := t.text.Cursor()
 	available := room - len(rows)
 	first := 0
@@ -103,7 +103,7 @@ func (m *Model) savedTemplateOverlay(t *savedYAML, title, name string, err error
 	first = min(first, max(0, len(lines)-available))
 	editorY := len(rows) + 1
 	for _, line := range lines[first:min(first+available, len(lines))] {
-		text(line)
+		rows = append(rows, detailDialogRow(" "+ansi.Truncate(line, width-4, "…")+" "))
 	}
 	for _, line := range errorRows {
 		rows = append(rows, dialogSurface.Foreground(lipgloss.Color("11")).Render(" "+line+" "))

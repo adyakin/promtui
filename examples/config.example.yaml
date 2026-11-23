@@ -13,6 +13,9 @@ query:
 terminal:
   program_status: true
 
+ui:
+  mouse: false # Set to true for clicking and wheel scrolling.
+
 # Named Alerts views can also be defined in alert_views.d/*.yaml beside this file.
 # alerts:
 #   views:

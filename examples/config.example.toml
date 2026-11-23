@@ -12,6 +12,9 @@ max_series = 500
 [terminal]
 program_status = true
 
+[ui]
+mouse = false # Set to true for clicking and wheel scrolling.
+
 [[connections]]
 name = "local"
 url = "http://localhost:9090"

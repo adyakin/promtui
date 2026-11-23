@@ -2,10 +2,13 @@ package app
 
 import (
 	"fmt"
+	"image"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/graph"
@@ -220,6 +223,8 @@ func (m *Model) panelView() string {
 		}
 	}
 	lines := []string{m.header(promQLTab, name)}
+	m.mouseModal()
+	m.mouseRegion(image.Rect(0, 1, m.width, m.height-1), m.promQLMouseKey)
 	body := m.panelBody()
 	start := min(m.offset, max(0, len(body)-m.height+2))
 	lines = append(lines, body[start:min(len(body), start+m.height-2)]...)
@@ -301,6 +306,7 @@ var dialogSurface = lipgloss.NewStyle().
 	Background(lipgloss.Color("#303844")).Foreground(lipgloss.Color("#e0e8f0"))
 
 func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
+	m.mouseModal()
 	d := m.dialogBounds(w)
 	if d.width == 0 {
 		return nil
@@ -308,6 +314,12 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 	inner := d.width - 2
 	var name, meta string
 	var lines []string
+	bindRows := func(start, end int, kind string, id func(int) string, selectRow func(int)) {
+		m.mouseRows(d.x+1, d.y+1+len(lines), inner, start, end, kind, id, func(i int) tea.Cmd {
+			selectRow(i)
+			return nil
+		}, nil)
+	}
 	row := func(text, swatch string, selected bool) {
 		lines = append(lines, dialogRow(text, swatch, inner, selected))
 	}
@@ -315,6 +327,9 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 	if m.pickingConnection {
 		room := d.height - 2
 		first := dialogStart(m.connectionRow, len(m.opt.Connections), room)
+		m.mouseDialog(d.x, d.y, d.width, room, m.connectionKey)
+		bindRows(first, min(first+room, len(m.opt.Connections)), "connections",
+			func(i int) string { return m.opt.Connections[i].Name }, func(i int) { m.connectionRow = i })
 		for i := first; i < min(first+room, len(m.opt.Connections)); i++ {
 			text := ui.Plain(m.opt.Connections[i].Name)
 			if m.opt.Connections[i].Name == m.opt.Connection.Name {
@@ -324,6 +339,15 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 		}
 		return lipgloss.NewLayer(renderFrame("Connections", "", lines, d.width, true, dialogSurface)).X(d.x).Y(d.y).Z(1)
 	}
+	m.mouseDialog(d.x, d.y, d.width, d.height-2, func(key string) tea.Cmd {
+		if m.panel == seriesKeys && m.filtering {
+			if len(m.filtered) != 0 {
+				return m.act("select", key, seriesKeys)
+			}
+			return nil
+		}
+		return m.promQLMouseKey(key)
+	})
 	switch m.panel {
 	case queryErrorKeys:
 		name = "Query Error"
@@ -339,6 +363,8 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 		name = "Time range"
 		room := d.height - 2
 		first := dialogStart(m.rangeRow, len(m.ranges), room)
+		bindRows(first, min(first+room, len(m.ranges)), "ranges",
+			func(i int) string { return m.ranges[i].String() }, func(i int) { m.rangeRow = i })
 		for i := first; i < min(first+room, len(m.ranges)); i++ {
 			window := m.ranges[i]
 			text := windowLabel(window)
@@ -361,6 +387,9 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 		}
 		room := d.height - len(lines) - 2
 		first := dialogStart(m.seriesRow, len(m.filtered), room)
+		bindRows(first, min(first+room, len(m.filtered)), "series", strconv.Itoa, func(i int) {
+			m.seriesRow, m.chart.selected = i, m.filtered[i]
+		})
 		for i := first; i < min(first+room, len(m.filtered)); i++ {
 			index := m.filtered[i]
 			state := "[ ]"
@@ -377,6 +406,8 @@ func (m *Model) dialogLayer(w workspace) *lipgloss.Layer {
 		}
 		room := d.height - 2
 		first := dialogStart(m.offset, len(m.labelFields), room)
+		bindRows(first, min(first+room, len(m.labelFields)), "labels",
+			func(i int) string { return m.labelFields[i].name }, func(i int) { m.offset = i })
 		nameWidth := 0
 		for _, f := range m.labelFields {
 			nameWidth = max(nameWidth, min(inner/3, ansi.StringWidth(f.name)))

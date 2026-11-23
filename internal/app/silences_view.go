@@ -136,13 +136,19 @@ func (m *Model) silencesScreen(now time.Time) (string, *tea.Cursor) {
 		body[2] = title.Render(silenceColumns(width, false, "Status", "Matchers", "Creator", "Comment", "Ends in"))
 		room := m.silencePage()
 		first := dialogStart(s.row, len(s.visible), room)
+		m.mouseTable("silences", first, min(first+room, len(s.visible)),
+			func(i int) string { return s.visible[i].ID }, func(i int) { s.row = i }, !s.search.Focused(),
+			func(key string) tea.Cmd {
+				s.row = targetNavigate(key, s.row, len(s.visible), room)
+				return nil
+			})
 		for i := first; i < min(first+room, len(s.visible)); i++ {
 			row := s.visible[i]
 			left := "Ended"
 			if row.EndsAt.After(now) && row.State(now) != "expired" {
 				left = alertDuration(now, row.EndsAt)
 			}
-			body[3+i-first] = silenceColumns(width, i == s.row, silenceStateLabel(row, now), silenceMatcherText(row.Matchers), row.CreatedBy, row.Comment, left)
+			body[tableDataStart+i-first] = silenceColumns(width, i == s.row, silenceStateLabel(row, now), silenceMatcherText(row.Matchers), row.CreatedBy, row.Comment, left)
 		}
 	}
 	switch {
@@ -316,6 +322,7 @@ func (m *Model) withSilenceDialog(base string, cursor *tea.Cursor, now time.Time
 	if !s.modal() {
 		return base, cursor
 	}
+	m.mouseModal()
 	var layer *lipgloss.Layer
 	cursor = nil
 	if s.editor != nil && s.confirm == noSilenceConfirm && !s.showMatches {
@@ -335,7 +342,9 @@ func (m *Model) withSilenceDialog(base string, cursor *tea.Cursor, now time.Time
 			offset = s.helpOffset
 		}
 		start := min(offset, len(rows)-room)
-		layer, _, _ = m.silenceLayer(name, rows[start:start+room], width, silenceRange(start, room, len(rows)))
+		var x, y int
+		layer, x, y = m.silenceLayer(name, rows[start:start+room], width, silenceRange(start, room, len(rows)))
+		m.mouseDialog(x, y, width, room, m.paneKey)
 	}
 	return lipgloss.NewCompositor(lipgloss.NewLayer(base), layer).Render(), cursor
 }

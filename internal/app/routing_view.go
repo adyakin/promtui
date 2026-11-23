@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"slices"
 	"strings"
 
@@ -38,6 +39,14 @@ func (m *Model) explorerLayout() explorerLayout {
 	}
 	list := max(28, m.width*44/100)
 	return explorerLayout{list, m.width - list - 1, max(2, m.height-5), max(2, m.height-5), false}
+}
+
+func (l explorerLayout) detailBox() image.Rectangle {
+	x, y := l.listWidth+1, 2
+	if l.stacked {
+		x, y = 0, y+l.listRows+2
+	}
+	return image.Rect(x+1, y, x+l.detailWidth-1, y+l.detailRows)
 }
 
 func (m *Model) sizeRoutingInput() {
@@ -149,11 +158,28 @@ func (m *Model) routingScreen() (string, *tea.Cursor) {
 	if s.data == nil {
 		rows := make([]string, m.height-5)
 		meta := renderPaneError(rows, m.routingErrorRows(), s.errorOffset)
+		m.mouseRegion(image.Rect(1, 2, m.width-1, 2+len(rows)), m.paneKey)
 		body = frame(name, meta, rows, m.width, s.dialog == routingNoDialog && !m.pickingConnection)
 	} else {
 		v := s.current()
 		layout := m.explorerLayout()
 		list, details := make([]string, layout.listRows), make([]string, layout.detailRows)
+		selectRoute := func(i int) tea.Cmd {
+			if id := v.visible[i]; id != v.selected {
+				v.selected, v.detailOffset = id, 0
+				if !s.showReceivers && len(s.filter(false)) != 0 {
+					s.reveal(v.selected)
+				}
+			}
+			return nil
+		}
+		detailRows := m.routingDetails(layout.detailWidth)
+		box := layout.detailBox()
+		m.mouseRegion(box, func(key string) tea.Cmd {
+			v.detailOffset = scrollPaneError(key, v.detailOffset, len(detailRows), layout.detailRows)
+			return nil
+		})
+		m.mouseItem(box, mouseID{}, func() tea.Cmd { v.details = v.selected != ""; return nil }, nil)
 		list[0] = fmt.Sprintf("  %d visible", len(v.visible))
 		if s.showReceivers && s.sortReceivers {
 			list[0] += " · A–Z"
@@ -178,13 +204,25 @@ func (m *Model) routingScreen() (string, *tea.Cursor) {
 			row := slices.Index(v.visible, v.selected)
 			room := len(list) - 1
 			start := min(max(0, row-room/2), max(0, len(v.visible)-room))
+			m.mouseRegion(image.Rect(1, 2, layout.listWidth-1, 2+len(list)), func(key string) tea.Cmd {
+				return selectRoute(targetNavigate(key, slices.Index(v.visible, v.selected), len(v.visible), room))
+			})
+			kind := "routes"
+			if s.showReceivers {
+				kind = "receivers"
+			}
+			m.mouseRows(1, 3, layout.listWidth-2, start, min(start+room, len(v.visible)), kind,
+				func(i int) string { return v.visible[i] }, func(i int) tea.Cmd {
+					v.details = false
+					return selectRoute(i)
+				}, withoutOpen(s.search.Focused(), m.mousePaneEnter))
 			meta = fmt.Sprintf("%d/%d", row+1, len(v.visible))
 			for i := start; i < min(start+room, len(v.visible)); i++ {
 				line := m.routingListLine(v.visible[i], layout.listWidth-4)
 				list[i-start+1] = renderStatusRow(layout.listWidth-2, i == row, "", line, "", nil)
 			}
 		}
-		detailMeta := renderPaneError(details, m.routingDetails(layout.detailWidth), v.detailOffset)
+		detailMeta := renderPaneError(details, detailRows, v.detailOffset)
 		left := frame(name, meta, list, layout.listWidth, focused && (!v.details || s.search.Focused()))
 		right := frame(detailName, detailMeta, details, layout.detailWidth, focused && v.details && !s.search.Focused())
 		body = left + "\n" + right
@@ -278,7 +316,8 @@ func (m *Model) routingDetails(width int) []string {
 	if s.showReceivers {
 		return s.receiverDetails(s.receivers.selected, width)
 	}
-	return routingWrapped(s.routeDetails(s.data.Routes[s.routes.selected]), width)
+	lines := s.routeDetails(s.data.Routes[s.routes.selected])
+	return append(wrappedStyled(detailHeading(lines[0]), width-4, false), wrapDetails(lines[1:], width-4, false)...)
 }
 
 func routingWrapped(lines []string, width int) []string {
@@ -342,21 +381,18 @@ func (s *routingState) routeDetails(n *alertmanager.Route) []string {
 }
 
 func (s *routingState) receiverDetails(name string, width int) []string {
-	rows := routingWrapped([]string{"Name: " + name, ""}, width)
+	rows := wrapDetails([]string{"Name: " + name, ""}, width-4, false)
 	switch r := s.receiver(name); {
 	case r == nil:
 		rows = append(rows, routingWrapped([]string{"Receiver not present in runtime configuration"}, width)...)
 	case r.YAML == "":
 		rows = append(rows, routingWrapped([]string{"Receiver YAML unavailable"}, width)...)
 	default:
-		for _, line := range strings.Split(strings.TrimSuffix(r.YAML, "\n"), "\n") {
-			// Hard wrap long values without collapsing YAML indentation.
-			line = ansi.Hardwrap(ui.Plain(line), max(1, width-4), true)
-			rows = append(rows, strings.Split(line, "\n")...)
-		}
+		rows = append(rows, wrappedStyled(ui.HighlightYAML(detailText(strings.TrimSuffix(r.YAML, "\n")), yamlStyles), width-4, true)...)
 	}
 	refs := s.data.References[name]
-	lines := []string{"", fmt.Sprintf("Configuration references: %d", len(refs))}
+	rows = append(rows, "", detailHeading(fmt.Sprintf("Configuration references: %d", len(refs))))
+	var lines []string
 	for _, id := range refs {
 		n := s.data.Routes[id]
 		lines = append(lines, "  "+id+"  "+s.routePath(id)+settingSource(id, n.Receiver.Source))
@@ -411,14 +447,24 @@ func (m *Model) routingDialogLayer() *lipgloss.Layer {
 		if s.dialog == routingReferencesDialog && start+i == s.dialogRow {
 			style = style.Reverse(true).Width(width - 2)
 		}
-		body[i] = style.Render(row)
+		if s.dialog == routingReceiverDialog {
+			body[i] = detailDialogRow(row)
+		} else {
+			body[i] = style.Render(row)
+		}
 	}
 	meta := ""
 	if room < len(rows) {
 		meta = fmt.Sprintf("%d–%d/%d", start+1, start+room, len(rows))
 	}
-	return lipgloss.NewLayer(renderFrame(name, meta, body, width, true, dialogSurface)).
-		X((m.width - width) / 2).Y((m.height - len(body) - 3) / 2).Z(1)
+	x, y := (m.width-width)/2, (m.height-room-3)/2
+	m.mouseDialog(x, y, width, room, m.paneKey)
+	if s.dialog == routingReferencesDialog {
+		refs := s.data.References[s.receivers.selected]
+		m.mouseRows(x+1, y+1, width-2, start, start+room, "route references",
+			func(i int) string { return refs[i] }, func(i int) tea.Cmd { s.dialogRow = i; return nil }, m.mousePaneEnter)
+	}
+	return lipgloss.NewLayer(renderFrame(name, meta, body, width, true, dialogSurface)).X(x).Y(y).Z(1)
 }
 
 func (m *Model) routingModalKey(k string) tea.Cmd {

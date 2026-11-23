@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"image"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,41 +80,7 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 	if key.Code >= '0' && key.Code < '0'+rune(len(tabs)) {
 		if key.Mod == tea.ModAlt || key.Mod == 0 && !m.textInputFocused() {
-			next := tabID(key.Code - '0')
-			if next != m.activeTab {
-				if m.activeTab == routingTab {
-					m.cancelRoutingSearch()
-				}
-				if m.activeTab == rulesTab {
-					m.cancelRulesSearch()
-					m.rules.stop()
-				}
-				if m.activeTab == alertsTab {
-					m.alerts.stop()
-				}
-				if m.activeTab == targetsTab {
-					m.targets.stop(nil)
-					m.targets.dialog = noTargetDialog
-				}
-				m.activeTab = next
-				if next == alertsTab {
-					return m.alertsOnEntry(time.Now()), true
-				}
-				if next == silencesTab {
-					m.alerts.silenceNotice = ""
-					return m.onSilencesEntry(time.Now()), true
-				}
-				if next == targetsTab {
-					return m.targetsOnEntry(time.Now()), true
-				}
-				if next == routingTab && m.routing.data == nil {
-					return m.refreshRouting(), true
-				}
-				if next == rulesTab {
-					return m.rulesOnEntry(time.Now()), true
-				}
-			}
-			return nil, true
+			return m.switchTab(tabID(key.Code - '0')), true
 		}
 	}
 	switch key.String() {
@@ -162,6 +130,43 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 		return m.rulesKey(key), true
 	}
 	return nil, false
+}
+
+func (m *Model) switchTab(next tabID) tea.Cmd {
+	if next == m.activeTab {
+		return nil
+	}
+	m.mouse.last = mouseClick{}
+	m.showURLFeedback = false
+	switch m.activeTab {
+	case routingTab:
+		m.cancelRoutingSearch()
+	case rulesTab:
+		m.cancelRulesSearch()
+		m.rules.stop()
+	case alertsTab:
+		m.alerts.stop()
+	case targetsTab:
+		m.targets.stop(nil)
+		m.targets.dialog = noTargetDialog
+	}
+	m.activeTab = next
+	switch next {
+	case alertsTab:
+		return m.alertsOnEntry(time.Now())
+	case silencesTab:
+		m.alerts.silenceNotice = ""
+		return m.onSilencesEntry(time.Now())
+	case targetsTab:
+		return m.targetsOnEntry(time.Now())
+	case routingTab:
+		if m.routing.data == nil {
+			return m.refreshRouting()
+		}
+	case rulesTab:
+		return m.rulesOnEntry(time.Now())
+	}
+	return nil
 }
 
 func (m *Model) textInputFocused() bool {
@@ -222,18 +227,24 @@ var activeTabStyle = lipgloss.NewStyle().Bold(true).
 func (m *Model) header(active tabID, statuses ...string) string {
 	brand := "PromTUI"
 	const divider = " │"
+	var boxes [len(tabs)]image.Rectangle
 	bar := func(compact, tight bool) string {
 		var s strings.Builder
+		x := 0
 		for i, tab := range tabs {
 			label := fmt.Sprintf(" [%d] %s ", i, tab)
 			if compact {
 				if i > 0 && !tight {
 					s.WriteByte(' ')
+					x++
 				}
 				label = fmt.Sprintf("[%d]", i)
 			} else {
 				label = strings.TrimRight(label, " ")
 			}
+			n := ansi.StringWidth(label)
+			boxes[i] = image.Rect(x, 0, x+n, 1)
+			x += n
 			if tabID(i) == active {
 				label = activeTabStyle.Render(label)
 			}
@@ -259,7 +270,19 @@ func (m *Model) header(active tabID, statuses ...string) string {
 	if brand != "" && connection != "" && room >= 3 {
 		left += " " + ansi.Truncate(connection, room-2, "…")
 	}
-	left += tabDivider + tabBar
+	left += tabDivider
+	if m.opt.Mouse {
+		x := ansi.StringWidth(left)
+		limit := m.width
+		if x+ansi.StringWidth(tabBar) > m.width {
+			limit-- // The last cell is a truncation marker.
+		}
+		for i, box := range boxes {
+			box = box.Add(image.Pt(x, 0)).Intersect(image.Rect(0, 0, limit, 1))
+			m.mouseItem(box, mouseID{"tabs", strconv.Itoa(i)}, func() tea.Cmd { return m.switchTab(tabID(i)) }, nil)
+		}
+	}
+	left += tabBar
 	gap := m.width - ansi.StringWidth(left)
 	for _, status := range statuses {
 		if n := ansi.StringWidth(status); n+1 <= gap {
@@ -283,6 +306,7 @@ func (m *Model) queryStatus() []string {
 }
 
 func (m *Model) renderScreen() (string, *tea.Cursor) {
+	m.mouseModal()
 	if m.width < minWidth || m.height < minHeight {
 		lines := make([]string, max(1, m.height))
 		lines[0] = ansi.Truncate("Enlarge terminal (24×10)", m.width, "…")

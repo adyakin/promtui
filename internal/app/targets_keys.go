@@ -65,6 +65,14 @@ func (m *Model) targetsKey(k tea.KeyPressMsg) tea.Cmd {
 				text, id := strings.Join(targetLabels(a.detail.Labels), "\n"), a.dialogID
 				return func() tea.Msg { return targetLabelsCopied{id, clipboard.WriteAll(text)} }
 			}
+		case "u":
+			if a.dialog == targetDetails {
+				value := a.detail.ScrapeURL
+				if !webLink(value) {
+					value = a.detail.GlobalURL
+				}
+				return m.copyDetailURL(value)
+			}
 		case "up", "down", "pgup", "pgdown", "home", "end":
 			_, rows, _, room := m.targetTextDialog()
 			a.dialogRow = targetNavigate(key, min(a.dialogRow, max(0, len(rows)-room)), len(rows)-room+1, room)
