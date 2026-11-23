@@ -9,26 +9,37 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func decodeYAML(data []byte, s settings) (settings, bool, []rawConnection, error) {
+func decodeYAML(path string, data []byte, s settings, views *alertViewRegistry) (settings, bool, []rawConnection, error) {
 	raw := struct {
 		settings           `yaml:",inline"`
 		InsecureSkipVerify yaml.Node       `yaml:"insecure_skip_verify"`
 		Connections        yamlConnections `yaml:"connections"`
+		Alerts             yaml.Node       `yaml:"alerts"`
 	}{settings: s}
+	if err := decodeYAMLDocument(data, &raw); err != nil {
+		return s, false, nil, err
+	}
+	if err := views.loadMain(path, raw.Alerts); err != nil {
+		return s, false, nil, err
+	}
+	global, err := yamlTLS(raw.InsecureSkipVerify)
+	return raw.settings, global != nil && *global, raw.Connections, err
+}
+
+func decodeYAMLDocument(data []byte, dst any) error {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(&raw); err != nil && !errors.Is(err, io.EOF) {
-		return s, false, nil, err
+	if err := decoder.Decode(dst); err != nil && !errors.Is(err, io.EOF) {
+		return err
 	}
 	var extra yaml.Node
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		if err == nil {
 			err = errors.New("expected a single YAML document")
 		}
-		return s, false, nil, err
+		return err
 	}
-	global, err := yamlTLS(raw.InsecureSkipVerify)
-	return raw.settings, global != nil && *global, raw.Connections, err
+	return nil
 }
 
 type yamlConnections []rawConnection
@@ -87,17 +98,18 @@ func (c *yamlConnections) UnmarshalYAML(node *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("connection %q: %w", key.Value, err)
 		}
-		alerts, err := yamlTableView(fields.Alerts, AlertsView, "alerts")
+		var defaultView string
+		alerts, err := yamlTableView(fields.Alerts, AlertsView, "alerts", &defaultView)
 		if err != nil {
 			return fmt.Errorf("connection %q: %w", key.Value, err)
 		}
-		targetsView, err := yamlTableView(fields.TargetsView, TargetsView, "targets_view")
+		targetsView, err := yamlTableView(fields.TargetsView, TargetsView, "targets_view", nil)
 		if err != nil {
 			return fmt.Errorf("connection %q: %w", key.Value, err)
 		}
 		*c = append(*c, rawConnection{
 			Name: key.Value, URL: fields.URL, AlertmanagerURL: fields.AlertmanagerURL, InsecureSkipVerify: override, Targets: targets,
-			Alerts: alerts, TargetsView: targetsView, VMAlert: rules,
+			Alerts: alerts, AlertDefaultView: defaultView, TargetsView: targetsView, VMAlert: rules,
 		})
 	}
 	return nil

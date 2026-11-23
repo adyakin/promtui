@@ -48,10 +48,12 @@ type alertsState struct {
 	counts        alertCounts
 	row           int
 	view          config.TableView
+	cachedTable   alertTable
 	sort          string
 	sorts         []viewSort
 	filter        string
 	input         textinput.Model
+	suggestions   alertSearchSuggestions
 	filterAnchor  string
 	filterRow     int
 	structured    alertMatcherFilter
@@ -66,6 +68,7 @@ type alertsState struct {
 	inhibition         alertInhibitionSnapshot
 	detailInhibition   alertInhibitionSnapshot
 	detailRelations    alertRelations
+	detailWrap         alertDetailWrap
 	detailTrail        []alertDetailVisit
 	relatedRow         int
 
@@ -89,7 +92,7 @@ func newAlertsState(view config.TableView) alertsState {
 	}
 	input.CharLimit = 4096
 	input.SetVirtualCursor(false)
-	return alertsState{input: input, view: view, sort: sortAlertDefault, sorts: viewSorts(config.AlertsView, defaultAlertSorts, view.Columns)}
+	return alertsState{input: input, view: view, sort: sortAlertDefault, sorts: alertViewSorts(view.Columns)}
 }
 
 func (a *alertsState) currentFilter() string {
@@ -249,12 +252,14 @@ func (m *Model) onAlertsCompleted(v alertsCompleted, now time.Time) tea.Cmd {
 		id, row := a.selection(), a.row
 		a.lastOK = now
 		a.rows = make([]alertRow, 0, len(v.rows))
+		a.cachedTable = alertTable{}
 		for i, alert := range v.rows {
 			row := newAlertRow(m.opt.Connection.AlertmanagerURL, alert)
 			row.snapshotIndex = i
 			a.rows = append(a.rows, row)
 		}
 		a.inhibition = alertInhibitionSnapshot{a.rows, v.inhibition, v.inhibitionErr}
+		a.refreshAlertNames()
 		a.counts = countAlerts(a.rows)
 		a.rebuild(id, row, now)
 	}
@@ -267,6 +272,7 @@ func (a *alertsState) edit(msg tea.Msg) tea.Cmd {
 	a.input = input
 	if a.input.Value() != before {
 		a.rebuild(a.selection(), a.row, time.Now())
+		a.refreshSearchSuggestions()
 	}
 	return cmd
 }
@@ -301,12 +307,22 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 	if a.input.Focused() && !a.help && a.dialog == alertNoDialog {
 		switch key {
 		case "enter":
+			before := a.input.Value()
+			if m.alertSuggestionsFit() {
+				a.searchSuggestionKey(key)
+			}
+			if a.input.Value() != before {
+				a.rebuild(a.selection(), a.row, time.Now())
+			}
 			a.filter = a.input.Value()
 			a.input.Blur()
 		case "esc":
 			a.input.Blur()
 			a.rebuild(a.filterAnchor, a.filterRow, time.Now())
 		default:
+			if m.alertSuggestionsFit() && a.searchSuggestionKey(key) {
+				return nil
+			}
 			return a.edit(k)
 		}
 		return nil
@@ -358,6 +374,9 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 		return m.openAlertMatcherEditor()
 	case "ctrl+o", "ctrl+s":
 		return m.openAlertFilters(key == "ctrl+s")
+	case "D", "shift+d":
+		m.resetAlertView()
+		return nil
 	case "x":
 		m.setAlertMatchers(alertMatcherFilter{})
 		return nil
@@ -399,7 +418,9 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 			a.filterAnchor, a.filterRow = a.selection(), a.row
 			a.input.SetValue(a.filter)
 			a.input.CursorEnd()
-			return a.input.Focus()
+			cmd := a.input.Focus()
+			a.refreshSearchSuggestions()
+			return cmd
 		}
 	case "s":
 		if len(a.rows) > 0 {

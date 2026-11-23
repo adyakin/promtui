@@ -58,13 +58,14 @@ func (m *Model) alertSavedFooter() string {
 	switch d.mode {
 	case alertSavedBrowse:
 		back = "Esc Close"
-		if d.openErr == nil {
-			if d.selected() >= 0 {
-				hints = append(hints, "Enter Load", "↑↓ Select", "e Rename", "u Update", "t Template", "d Delete")
-			}
-			if len(d.items) != 0 {
-				hints = append(hints, "/ Search")
-			}
+		if d.selected().kind != alertPickerNone {
+			hints = append(hints, "Enter Apply", "↑↓ Select")
+		}
+		if len(d.items) != 0 || len(d.views) != 0 {
+			hints = append(hints, "/ Search")
+		}
+		if d.selected().kind == alertPickerFilter {
+			hints = append(hints, "e Rename", "u Update", "t Template", "d Delete")
 		}
 	case alertSavedSearch:
 		hints = []string{"Enter Done", "↑↓ Select"}
@@ -93,7 +94,7 @@ func alertSavedError(err error) string {
 	var linkErr *os.LinkError
 	switch {
 	case errors.Is(err, saveditems.ErrChanged):
-		return "File changed. Reopen Saved Alerts."
+		return "File changed. Reopen with Ctrl+O."
 	case errors.As(err, &pathErr):
 		return fmt.Sprintf("alerts.yaml: %s: %v", pathErr.Op, pathErr.Err)
 	case errors.As(err, &linkErr):
@@ -110,7 +111,7 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 		return m.savedTemplateOverlay(d.template, "Edit Alert Filter Template", d.items[d.target].Name, d.err, width)
 	}
 	inner, maxRows := width-2, m.height-5
-	title, meta := "Saved Alerts", ""
+	title, meta := "Open — Alerts", ""
 	var rows []string
 	var cursor *tea.Cursor
 	text := func(s string) {
@@ -124,8 +125,12 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 		text(value)
 	}
 	var errorRows []string
-	if d.err != nil {
-		errorRows = strings.Split(ansi.Hardwrap(alertSavedError(d.err), inner-2, false), "\n")
+	err := d.err
+	if err == nil {
+		err = d.openErr
+	}
+	if err != nil {
+		errorRows = strings.Split(ansi.Hardwrap(alertSavedError(err), inner-2, false), "\n")
 		limit := min(3, len(errorRows))
 		if limit < len(errorRows) {
 			errorRows[limit-1] = ansi.Truncate(errorRows[limit-1], inner-3, "") + "…"
@@ -140,13 +145,15 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 			input()
 		case d.filter != "":
 			text("Search: " + d.filter)
+		case len(d.items) != 0 || len(d.views) != 0:
+			text("/ Search filters and views")
 		}
-		if d.err == nil && len(d.matches) == 0 {
-			if len(d.items) == 0 {
+		if len(d.matches) == 0 && len(rows) < room {
+			if len(d.items) == 0 && len(d.views) == 0 && err == nil {
 				text("No saved alert filters yet")
 				text("m Edit · Ctrl+S Save")
-			} else {
-				text("No matching filters")
+			} else if len(d.items) != 0 || len(d.views) != 0 {
+				text("No matching filters or views")
 			}
 		}
 		room = min(10, room-len(rows))
@@ -155,7 +162,15 @@ func (m *Model) alertSavedLayer() (*lipgloss.Layer, *tea.Cursor) {
 			meta = fmt.Sprintf("%d/%d", d.row+1, len(d.matches))
 		}
 		for i := first; i < min(first+room, len(d.matches)); i++ {
-			rows = append(rows, dialogRow(ui.Plain(d.items[d.matches[i]].Name), "", inner, i == d.row))
+			item := d.matches[i]
+			var label string
+			switch item.kind {
+			case alertPickerFilter:
+				label = "FILTER  " + ui.Plain(d.items[item.filterIndex].Name)
+			case alertPickerView:
+				label = "VIEW    " + ui.Plain(item.viewName)
+			}
+			rows = append(rows, dialogRow(label, "", inner, i == d.row))
 		}
 	case alertSavedName:
 		title = d.action.label() + " Alert Filter"

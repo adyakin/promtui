@@ -6,7 +6,7 @@ YAML is the preferred format. Without `-config`, PromTUI checks
 PromTUI reports the error without trying a lower priority file. If none exists,
 PromTUI uses the built-in defaults.
 
-An explicit `-config PATH` loads only that file, choosing the parser by
+An explicit `-config PATH` selects the main configuration file, choosing the parser by
 extension. Existing TOML configs need no conversion. To switch to YAML, copy
 [`config.example.yaml`](../examples/config.example.yaml) and turn each TOML
 `[[connections]]` entry into a YAML key under `connections`, using its `name`
@@ -145,6 +145,55 @@ Omit a list to use its default; empty lists are invalid. Unknown built-ins,
 (missing `field`, blank `title`, or unknown properties) fail at startup.
 Errors identify the connection and setting, for example
 `connection "production": alerts.columns[2]: unknown field "service"`.
+
+### Named Alerts views
+
+Define shared layouts under the top-level YAML `alerts.views` mapping, and
+optionally select a starting view with `alerts.default_view` on each connection:
+
+```yaml
+alerts:
+  views:
+    certificates:
+      columns:
+        - {source: labels.severity, width: 10}
+        - {source: labels.alertname, weight: 2}
+        - {source: labels.path, title: Certificate, weight: 3}
+        - source: annotations.summary
+          title: Expires in
+          extract: 'expires in (.+?)\.?$'
+          weight: 2
+
+connections:
+  local:
+    url: http://localhost:9090
+    alertmanager_url: http://localhost:9093
+    alerts:
+      default_view: certificates
+```
+
+Each `source` is a built-in Alerts field, `labels.<name>`, or
+`annotations.<name>`. `width` sets a preferred width in terminal cells;
+`weight` gives flexible columns a relative share of space. Use one or neither.
+The table sizes unspecified columns automatically and can truncate values on
+narrow terminals. `extract` takes a Go regular expression with exactly one
+capture group; a missing value or non-match displays `—`. Views change only
+the displayed columns, not the connection's `alerts.search` fields. Sorting
+an extracted column uses the raw source value, not the displayed capture.
+On narrow terminals, `…` at the end of the heading row means columns were
+omitted.
+
+You can also put `*.yaml` files under `alert_views.d/` next to the active main
+config (normally `~/.config/promtui/alert_views.d/`). Each external file starts
+with `views:` instead of `alerts:`, followed by the same mapping of names to
+layouts. Files are loaded alphabetically. Duplicate names, including names
+from the main config, are rejected rather than merged. This is separate from
+`alerts.yaml`, which stores saved label filters.
+
+Use **Ctrl+O** in Alerts to open a filter or a view. View selections are
+remembered separately for each connection until exit. Press uppercase **D**
+to restore the connection's configured default, or its legacy columns (or the
+built-in layout) if no default is configured.
 
 ## TLS verification
 

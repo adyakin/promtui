@@ -315,6 +315,11 @@ func (m *Model) renderWorkspace() (string, *tea.Cursor) {
 			layer, caret := m.alertSavedLayer()
 			return lipgloss.NewCompositor(lipgloss.NewLayer(screen), layer).Render(), caret
 		}
+		if !m.pickingConnection && m.silences.editor == nil && !m.alerts.help && m.alerts.dialog == alertNoDialog {
+			if layer := m.alertSuggestionsLayer(); layer != nil {
+				screen = lipgloss.NewCompositor(lipgloss.NewLayer(screen), layer).Render()
+			}
+		}
 		screen, cursor = m.withSilenceDialog(screen, cursor, time.Now())
 		return m.withConnectionPicker(screen, cursor, workspace{resultY: 1, bottomY: m.height - 3})
 	}

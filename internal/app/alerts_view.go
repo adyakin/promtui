@@ -14,7 +14,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"promtui/internal/alertmanager"
-	"promtui/internal/config"
 	"promtui/internal/ui"
 )
 
@@ -50,11 +49,17 @@ func (m *Model) alertsFooter() string {
 		hints, back = []string{"↑↓ Scroll", "? Help"}, "Esc Close"
 	case a.input.Focused():
 		hints, back = []string{"Enter Apply", "Alt+S Status", "Alt+0–5 Tabs"}, "Esc Cancel"
+		if len(a.suggestions.matches) > 0 {
+			hints = append([]string{"↑↓ Suggestion"}, hints...)
+		}
 		if len(m.opt.Connections) > 0 {
 			hints = append(hints, m.connectionHint())
 		}
 	default:
-		hints = append(hints, "m Matchers", "Ctrl+O Saved")
+		hints = append(hints, "m Matchers", "Ctrl+O Open")
+		if len(m.opt.AlertViews) > 0 {
+			hints = append(hints, "D Default view")
+		}
 		if a.structured.match != nil {
 			hints = append(hints, "x Clear", "Ctrl+S Save")
 		}
@@ -171,36 +176,10 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 			room := m.alertPage()
 			first := min(max(0, a.row-room/2), max(0, len(a.visible)-room))
 			last := min(first+room, len(a.visible))
-			if a.view.Columns == nil {
-				var headings [len(defaultAlertFields)]string
-				for i, field := range defaultAlertFields {
-					headings[i] = config.AlertsView.FieldTitle(field)
-				}
-				body[2] = title.Render(alertColumns(width, false, headings[0], headings[1], headings[2], headings[3], headings[4]))
-				for i := first; i < last; i++ {
-					row := a.visible[i]
-					var values [len(defaultAlertFields)]string
-					for j, field := range defaultAlertFields {
-						values[j] = alertValue(row.field(field, now))
-					}
-					body[3+i-first] = alertColumns(width, i == a.row, values[0], values[1], values[2], values[3], values[4])
-				}
-			} else {
-				table := layoutViewTable(config.AlertsView, a.view.Columns, width)
-				body[2] = table.header()
-				for i := first; i < last; i++ {
-					row := a.visible[i]
-					body[3+i-first] = table.row(i == a.row, func(field string, width int) (string, color.Color) {
-						value := row.field(field, now)
-						if field == "severity" || field == "labels.severity" {
-							return value, alertSeverityTint(value)
-						}
-						if field == "state" && value == "Silenced + Inhibited" && width < len(value) {
-							value = "Sil.+Inhib."
-						}
-						return value, nil
-					})
-				}
+			table := a.tableForWidth(width, now)
+			body[2] = table.header()
+			for i := first; i < last; i++ {
+				body[3+i-first] = table.row(i == a.row, a.visible[i], now)
 			}
 		}
 	}
@@ -214,10 +193,7 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	if a.err == nil && len(a.visible) > 0 {
 		meta = fmt.Sprintf("%d/%d", a.row+1, len(a.visible))
 	}
-	heading := "Alerts"
-	if filter := a.structured.description(); filter != "" {
-		heading += " | " + ui.Plain(filter)
-	}
+	heading := m.alertsHeading()
 	base := strings.Join([]string{m.header(alertsTab), frame(heading, meta, body, m.width, a.saved.mode == alertSavedClosed),
 		lipgloss.NewStyle().Width(m.width).Render(ansi.Truncate(" "+status, m.width, "…")), m.footer()}, "\n")
 	if (a.help || a.dialog != alertNoDialog) && m.silences.editor == nil {
@@ -226,28 +202,31 @@ func (m *Model) alertsScreen(now time.Time) (string, *tea.Cursor) {
 	return base, cursor
 }
 
-func alertColumns(width int, selected bool, state, severity, name, instance, duration string) string {
-	const separator = "  "
-	if width < 43 {
-		n := 11
-		if state == "Silenced + Inhibited" {
-			state = "Sil.+Inhib."
+func (m *Model) alertsHeading() string {
+	view := ui.Plain(m.alertViewName())
+	filter := ui.Plain(m.alerts.structured.description())
+	if view == "" {
+		if filter != "" {
+			return "Alerts | " + filter
 		}
-		line := alertColumn(state, n) + separator + ansi.Truncate(ui.Plain(name), width-2-n-len(separator), "…")
-		return renderStatusRow(width, selected, line, "", "", nil)
+		return "Alerts"
 	}
-	stateWidth := 11
-	if width >= 76 {
-		stateWidth = 20
-	} else if state == "Silenced + Inhibited" {
-		state = "Sil.+Inhib."
+	heading := "Alerts | View: " + view
+	if filter == "" {
+		return heading
 	}
-	const severityWidth, durationWidth = 8, 8
-	remaining := width - 2 - stateWidth - severityWidth - durationWidth - 4*len(separator)
-	instanceWidth := max(5, remaining*2/5)
-	after := separator + strings.Join([]string{alertColumn(name, remaining-instanceWidth),
-		alertColumn(instance, instanceWidth), ansi.Truncate(duration, durationWidth, "…")}, separator)
-	return renderStatusRow(width, selected, alertColumn(state, stateWidth)+separator, alertColumn(severity, severityWidth), after, alertSeverityTint(severity))
+	heading += " | " + filter
+	if ansi.StringWidth(heading) <= m.width-7 {
+		return heading
+	}
+	// At small widths, keep both names visible rather than clipping the filter
+	// after a view name. Prefer the saved name over its parameter summary.
+	if name := m.alerts.structured.name; name != "" {
+		filter = ui.Plain(name)
+	}
+	room := max(2, m.width-7-len("Alerts |  | "))
+	viewWidth := min(ansi.StringWidth(view), room-min(room/2, ansi.StringWidth(filter)))
+	return "Alerts | " + ansi.Truncate(view, viewWidth, "…") + " | " + ansi.Truncate(filter, room-viewWidth, "…")
 }
 
 func alertSeverityTint(severity string) color.Color {
@@ -280,19 +259,24 @@ func alertTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05 UTC")
 }
 
-func alertDetailLines(a alertRow, now time.Time) []string {
-	lines := []string{
+func alertDetailOverview(a alertRow) []string {
+	return []string{
 		"Overview",
 		"Alert: " + alertValue(a.Labels["alertname"]),
 		"Severity: " + alertValue(a.Labels["severity"]),
 		"State: " + a.state(),
 		"Active since: " + alertTime(a.StartsAt),
-		"Duration: " + alertDuration(a.StartsAt, now),
+	}
+}
+
+func alertDetailBody(a alertRow, inhibition []string) []string {
+	lines := []string{
 		"Last update: " + alertTime(a.UpdatedAt),
 	}
 	if value := a.Annotations["value"]; value != "" {
 		lines = append(lines, "Evaluation value (annotation): "+value)
 	}
+	lines = append(lines, inhibition...)
 	lines = append(lines, "", "Annotations")
 	if len(a.Annotations) == 0 {
 		lines = append(lines, "—")
@@ -328,8 +312,37 @@ func alertDetailLines(a alertRow, now time.Time) []string {
 	return lines
 }
 
+type alertDetailWrap struct {
+	width                   int
+	duration                string
+	durationAt, durationLen int
+	rows                    []string
+}
+
+func (a *alertsState) wrappedAlertDetails(now time.Time, width int) []string {
+	c := &a.detailWrap
+	duration := "Duration: " + alertDuration(a.detail.StartsAt, now)
+	if c.rows == nil || c.width != width {
+		rows := appendAlertDialogRows(nil, alertDetailOverview(a.detail), width)
+		at := len(rows)
+		rows = appendAlertDialogRows(rows, []string{duration}, width)
+		*c = alertDetailWrap{
+			width: width, duration: duration, durationAt: at, durationLen: len(rows) - at,
+			rows: appendAlertDialogRows(rows, alertDetailBody(a.detail, a.detailRelations.lines), width),
+		}
+	} else if c.duration != duration {
+		wrapped := appendAlertDialogRows(nil, []string{duration}, width)
+		start, end := c.durationAt, c.durationAt+c.durationLen
+		c.rows = slices.Replace(c.rows, start, end, wrapped...)
+		c.duration, c.durationLen = duration, len(wrapped)
+	}
+	return c.rows
+}
+
 func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, room int) {
 	a := &m.alerts
+	width = min(76, m.width-max(4, m.width/8))
+	rowLimit := max(0, m.height-max(7, m.height/3))
 	var lines []string
 	switch {
 	case a.help:
@@ -349,9 +362,10 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll status", "Esc or ?: return to status"}
 		default:
 			lines = []string{"↑ / ↓: select an alert", "PgUp / PgDn: move one page", "Home / End: first / last alert",
-				"Enter: open details", "/: fuzzy-filter alerts (Enter applies, Esc cancels)",
+				"Enter: open details", "/: fuzzy-filter alerts (↑/↓: suggest alert names, Enter: apply, Esc: cancel)",
 				"m: edit label matchers · x: clear label matchers",
-				"Ctrl+O: browse saved filters · Ctrl+S: save active matchers",
+				"Ctrl+O: open filters or views · Ctrl+S: save active matchers",
+				"D: restore the connection's default view",
 				"s: cycle sort modes", "r: refresh now (auto-refresh every 30s)",
 				"Alt+S: show request status", "0–5 or Alt+0–5: switch tabs", "q: quit"}
 			if a.err != nil {
@@ -359,10 +373,10 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			}
 		}
 	case a.dialog == alertDetails:
-		name, lines = "Alert details", alertDetailLines(a.detail, now)
-		lines = append(lines, a.detailRelations.lines...)
+		rows = a.wrappedAlertDetails(now, width)
+		return "Alert details", rows, width, min(len(rows), rowLimit)
 	case a.dialog == alertRelated:
-		name = "Related alerts"
+		return "Related alerts", nil, width, m.alertRelatedRoom()
 	case a.dialog == alertStatusDialog:
 		name, lines = "Alerts status", []string{a.status()}
 		if a.err != nil {
@@ -374,11 +388,12 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			lines = append(lines, "Last successful refresh: "+alertTime(a.lastOK))
 		}
 	}
-	width = min(76, m.width-max(4, m.width/8))
-	if !a.help && a.dialog == alertRelated {
-		room = min(len(a.detailRelations.links), m.height-max(7, m.height/3))
-		return
-	}
+	rows = appendAlertDialogRows(nil, lines, width)
+	room = min(len(rows), rowLimit)
+	return
+}
+
+func appendAlertDialogRows(rows, lines []string, width int) []string {
 	for _, line := range lines {
 		for _, paragraph := range strings.Split(strings.ReplaceAll(line, "\r\n", "\n"), "\n") {
 			wrapped := strings.Split(ansi.Wrap(ui.Plain(paragraph), width-4, ""), "\n")
@@ -390,8 +405,7 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 			rows = append(rows, wrapped...)
 		}
 	}
-	room = min(len(rows), m.height-max(7, m.height/3))
-	return
+	return rows
 }
 
 func (m *Model) scrollAlertDialog(key string) {

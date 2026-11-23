@@ -4,13 +4,24 @@ import (
 	"image/color"
 	"strings"
 	"testing"
+	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
+	"promtui/internal/alertmanager"
 	"promtui/internal/config"
 )
 
 func TestStatusRowTextColors(t *testing.T) {
+	alertLine := func(width int, selected bool, severity string, columns ...config.Column) string {
+		now := time.Now()
+		a := newAlertsState(config.TableView{Columns: columns})
+		a.rows = []alertRow{newAlertRow("test", alertmanager.Alert{
+			Labels:   map[string]string{"severity": severity, "alertname": "DiskFull", "instance": "node", "servicename": "billing"},
+			StartsAt: now.Add(-time.Minute),
+		})}
+		return a.tableLayout(width, now).row(selected, a.rows[0], now)
+	}
 	for _, tt := range []struct {
 		name, label string
 		row         func(bool) string
@@ -26,22 +37,16 @@ func TestStatusRowTextColors(t *testing.T) {
 			return targetColumns(60, selected, [6]string{"UP", "node"})
 		}, nil},
 		{"alert critical", "critical", func(selected bool) string {
-			return alertColumns(60, selected, "Active", "critical", "DiskFull", "node", "1m")
+			return alertLine(60, selected, "critical")
 		}, ansi.Red},
 		{"alert high", "HIGH", func(selected bool) string {
-			return alertColumns(80, selected, "Active", "HIGH", "DiskFull", "node", "1m")
+			return alertLine(80, selected, "HIGH")
 		}, ansi.Yellow},
 		{"alert warning", "warning", func(selected bool) string {
-			return alertColumns(60, selected, "Active", "warning", "DiskFull", "node", "1m")
+			return alertLine(60, selected, "warning")
 		}, nil},
 		{"custom alert severity", "critical", func(selected bool) string {
-			table := layoutViewTable(config.AlertsView, []config.Column{{Field: "labels.servicename"}, {Field: "labels.severity"}}, 60)
-			return table.row(selected, func(field string, _ int) (string, color.Color) {
-				if field == "labels.severity" {
-					return "critical", alertSeverityTint("critical")
-				}
-				return "billing", nil
-			})
+			return alertLine(60, selected, "critical", config.Column{Field: "labels.servicename"}, config.Column{Field: "labels.severity"})
 		}, ansi.Red},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

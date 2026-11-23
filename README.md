@@ -51,6 +51,8 @@ Start with the [YAML config example](examples/config.example.yaml) or the [TOML 
 
 In Alerts, press `Enter` to see [inhibition sources, targets, and matching rules](docs/03-alerts.md#inhibition). When related alerts are available, press `i` to choose one and `Esc` to go back.
 
+Use **Ctrl+O** to open saved filters or [named table views](docs/configuration.md#named-alerts-views), and **D** to reset the view for the current connection. In **/** search, use **↑/↓** to highlight a suggested alert name before pressing **Enter**, or press **Enter** without selecting a suggestion to apply the text you typed.
+
 Default paths on macOS and Linux:
 
 - **Config:** `~/.config/promtui/config.yaml`, then `config.yml`, then `config.toml`

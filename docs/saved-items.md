@@ -51,9 +51,12 @@ For file-based setup, see the [README](../README.md#promql-queriesyaml) and
 
 ## Saved Alerts
 
-**Ctrl+O** opens saved filters. Use **↑/↓** to select, **/** to search by name,
-**Enter** to load, **e** to rename, **u** to update, and **d** to delete after
-confirmation. Press **m** to edit the active label matchers, **x** to clear them
+**Ctrl+O** opens the Alerts picker, which lists saved filters and
+[configured table views](configuration.md#named-alerts-views). Use **↑/↓** to
+select, **/** to search by name, or **Enter** to open. Opening a filter leaves
+the table view alone, and opening a view leaves the current matchers alone.
+For filter entries only, use **e** to rename, **u** to update, or **d** to
+delete after confirmation. Press **m** to edit the active label matchers, **x** to clear them
 without clearing fuzzy search, or **Ctrl+S** to save the active values as a new
 literal filter.
 

@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -67,13 +68,14 @@ type alertFiltersDialog struct {
 	mode     alertSavedMode
 	snapshot savedalerts.Snapshot
 	items    []savedalerts.Filter
+	views    []string
 	err      error
 	openErr  error
 
 	action       savedAction
 	filter       string
-	searchOrigin int
-	matches      []int
+	searchOrigin alertPickerItem
+	matches      []alertPickerItem
 	row, target  int
 	input        textinput.Model
 	editors      []alertMatcherInputs
@@ -93,19 +95,44 @@ type alertClipboard struct {
 	err     error
 }
 
-func (d *alertFiltersDialog) selected() int {
+type alertPickerKind uint8
+
+const (
+	alertPickerNone alertPickerKind = iota
+	alertPickerFilter
+	alertPickerView
+)
+
+// The kind determines whether this points into the saved-filter snapshot
+// or the named view registry. A picker row is never a snapshot index.
+type alertPickerItem struct {
+	kind        alertPickerKind
+	filterIndex int
+	viewName    string
+}
+
+func alertFilterItem(index int) alertPickerItem {
+	return alertPickerItem{kind: alertPickerFilter, filterIndex: index}
+}
+
+func (d *alertFiltersDialog) selected() alertPickerItem {
 	if len(d.matches) == 0 {
-		return -1
+		return alertPickerItem{}
 	}
 	return d.matches[d.row]
 }
 
-func (d *alertFiltersDialog) rebuild(filter string, selected, row int) {
+func (d *alertFiltersDialog) rebuild(filter string, selected alertPickerItem, row int) {
 	d.matches = d.matches[:0]
 	search := newFuzzyFilter(filter)
 	for i, f := range d.items {
 		if search.matches(f.Name) {
-			d.matches = append(d.matches, i)
+			d.matches = append(d.matches, alertFilterItem(i))
+		}
+	}
+	for _, name := range d.views {
+		if search.matches(name) {
+			d.matches = append(d.matches, alertPickerItem{kind: alertPickerView, viewName: name})
 		}
 	}
 	d.row = slices.Index(d.matches, selected)
@@ -121,7 +148,6 @@ func (m *Model) openAlertFilters(save bool) tea.Cmd {
 		err: err, openErr: err, target: -1,
 	}
 	d := &m.alerts.saved
-	d.rebuild("", -1, 0)
 	if save {
 		d.mode, d.action = alertSavedName, addSaved
 		if d.err != nil {
@@ -133,6 +159,8 @@ func (m *Model) openAlertFilters(save bool) tea.Cmd {
 		}
 		return m.startAlertSavedInput("Name: ", "")
 	}
+	d.views = slices.Sorted(maps.Keys(m.opt.AlertViews))
+	d.rebuild("", alertPickerItem{}, 0)
 	return nil
 }
 
@@ -140,6 +168,9 @@ func (m *Model) startAlertSavedInput(prompt, value string) tea.Cmd {
 	d := &m.alerts.saved
 	d.input = textinput.New()
 	d.input.Prompt = prompt
+	if d.mode == alertSavedSearch {
+		d.input.Placeholder = "filters and views…"
+	}
 	d.input.SetVirtualCursor(false)
 	d.input.SetValue(value)
 	m.sizeAlertSavedInputs()
@@ -255,32 +286,42 @@ func (m *Model) alertSavedKey(k tea.KeyPressMsg) tea.Cmd {
 			}
 			return m.alertSavedInput(k)
 		}
-		if d.openErr != nil {
-			return nil
-		}
-		if key == "/" {
+		if key == "/" && (len(d.items) != 0 || len(d.views) != 0) {
 			d.mode, d.searchOrigin, d.err = alertSavedSearch, d.selected(), nil
 			return m.startAlertSavedInput("Search: ", d.filter)
 		}
-		d.target = d.selected()
-		if d.target < 0 {
+		selected := d.selected()
+		if selected.kind == alertPickerView {
+			if key == "enter" {
+				if m.selectAlertView(selected.viewName) {
+					m.closeAlertSaved()
+				} else {
+					d.err = fmt.Errorf("alert view %q is no longer configured", selected.viewName)
+				}
+			}
 			return nil
 		}
-		item := d.items[d.target]
-		d.err = nil
+		if selected.kind != alertPickerFilter || d.openErr != nil {
+			return nil
+		}
+		item := d.items[selected.filterIndex]
 		switch key {
 		case "enter":
+			d.err = nil
 			return m.loadAlertFilter(item)
 		case "e":
+			d.target, d.err = selected.filterIndex, nil
 			d.mode, d.action = alertSavedName, renameSaved
 			return m.startAlertSavedInput("Name: ", item.Name)
 		case "u", "t":
+			d.target, d.err = selected.filterIndex, nil
 			d.action = updateSaved
 			if key == "t" || len(item.Parameters) > 0 {
 				return m.openAlertTemplate(item)
 			}
 			d.mode = alertSavedConfirm
 		case "d":
+			d.target, d.err = selected.filterIndex, nil
 			d.mode, d.action = alertSavedConfirm, deleteSaved
 		}
 	}
@@ -375,9 +416,9 @@ func (m *Model) finishAlertSave(next savedalerts.Snapshot, err error) {
 			active.name, active.values, active.defs = "", nil, nil
 		}
 	}
-	selected := d.target
+	selected := alertFilterItem(d.target)
 	if d.action == deleteSaved {
-		selected = -1
+		selected = alertPickerItem{}
 	}
 	d.snapshot, d.items = next, next.Filters()
 	d.rebuild(d.filter, selected, d.row)

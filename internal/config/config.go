@@ -18,6 +18,7 @@ type Connection struct {
 	Targets            []TargetSource
 	VMAlert            []RuleSource
 	Alerts             TableView
+	AlertDefaultView   string
 	TargetsView        TableView
 }
 
@@ -61,6 +62,7 @@ type settings struct {
 type Config struct {
 	settings
 	Connections []Connection
+	AlertViews  map[string]TableView
 }
 
 type rawConnection struct {
@@ -71,6 +73,7 @@ type rawConnection struct {
 	Targets            []TargetSource `toml:"-"`
 	VMAlert            []RuleSource   `toml:"-"`
 	Alerts             TableView      `toml:"-"`
+	AlertDefaultView   string         `toml:"-"`
 	TargetsView        TableView      `toml:"-"`
 }
 
@@ -95,13 +98,13 @@ func LoadDefault(dir string) (Config, error) {
 		}
 		return decode(path, data)
 	}
-	return resolve(defaults(), false, nil)
+	return resolveConfig(dir, defaults(), false, nil, alertViewRegistry{})
 }
 
 func Load(path string, optional bool) (Config, error) {
 	data, err := os.ReadFile(path)
 	if optional && os.IsNotExist(err) {
-		return resolve(defaults(), false, nil)
+		return resolveConfig(filepath.Dir(path), defaults(), false, nil, alertViewRegistry{})
 	}
 	if err != nil {
 		return Config{}, err
@@ -113,10 +116,11 @@ func decode(path string, data []byte) (Config, error) {
 	s := defaults()
 	var global bool
 	var connections []rawConnection
+	var views alertViewRegistry
 	var err error
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".yaml", ".yml":
-		s, global, connections, err = decodeYAML(data, s)
+		s, global, connections, err = decodeYAML(path, data, s, &views)
 	case ".toml":
 		raw := struct {
 			settings
@@ -130,7 +134,7 @@ func decode(path string, data []byte) (Config, error) {
 	}
 	var c Config
 	if err == nil {
-		c, err = resolve(s, global, connections)
+		c, err = resolveConfig(filepath.Dir(path), s, global, connections, views)
 	}
 	if err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
@@ -138,11 +142,14 @@ func decode(path string, data []byte) (Config, error) {
 	return c, nil
 }
 
-func resolve(s settings, insecure bool, raw []rawConnection) (Config, error) {
+func resolveConfig(dir string, s settings, insecure bool, raw []rawConnection, views alertViewRegistry) (Config, error) {
+	if err := views.loadDir(filepath.Join(dir, "alert_views.d")); err != nil {
+		return Config{}, err
+	}
 	if len(raw) == 0 {
 		raw = []rawConnection{{Name: "local", URL: "http://localhost:9090"}}
 	}
-	c := Config{settings: s}
+	c := Config{settings: s, AlertViews: views.views}
 	if c.General.Default == "" {
 		c.General.Default = raw[0].Name
 	}
@@ -163,13 +170,18 @@ func resolve(s settings, insecure bool, raw []rawConnection) (Config, error) {
 		if err := validateSources(conn.VMAlert, "vmalert"); err != nil {
 			return c, fmt.Errorf("connection %q: %w", conn.Name, err)
 		}
+		if name := conn.AlertDefaultView; name != "" {
+			if _, ok := c.AlertViews[name]; !ok {
+				return c, fmt.Errorf("connection %q: alerts.default_view %q is not defined in alerts.views or alert_views.d", conn.Name, name)
+			}
+		}
 		skipVerify := insecure
 		if conn.InsecureSkipVerify != nil {
 			skipVerify = *conn.InsecureSkipVerify
 		}
 		c.Connections = append(c.Connections, Connection{
 			Name: conn.Name, URL: conn.URL, AlertmanagerURL: conn.AlertmanagerURL, InsecureSkipVerify: skipVerify, Targets: conn.Targets,
-			Alerts: conn.Alerts, TargetsView: conn.TargetsView, VMAlert: conn.VMAlert,
+			Alerts: conn.Alerts, AlertDefaultView: conn.AlertDefaultView, TargetsView: conn.TargetsView, VMAlert: conn.VMAlert,
 		})
 		seen[conn.Name] = true
 	}

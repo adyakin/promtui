@@ -77,6 +77,7 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 		m.rules.requestID, m.rules.tickQueued = rulesID, rulesTick
 		m.sizeRulesInput()
 		m.opt.Connection = next
+		m.restoreAlertView()
 		if m.activeTab == rulesTab {
 			return m.refreshRules()
 		}
