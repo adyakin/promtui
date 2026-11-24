@@ -31,9 +31,8 @@ alert. On an alert instance, `p` loads the parent expression without adding
 label matchers. For a recording rule it loads the defining expression, not
 the output metric name. Existing query results remain until you run a query.
 The local Prometheus parser may warn about MetricsQL syntax; warnings do not
-block execution. Text the editor cannot represent exactly (for example, literal
-tabs or text beyond its capacity) remains available in Details rather than
-being silently changed or truncated.
+block execution. Expressions beyond the editor's capacity stay in Details
+rather than being silently truncated.
 
 ## Choose rule sources
 
@@ -55,6 +54,13 @@ connections:
 For that connection, only the listed sources are queried. Prometheus and
 vmalert use the same endpoint, with path prefixes preserved. Sources inherit
 `insecure_skip_verify` and the configured timeout.
+
+From **Alert Details**, press **r** to find the generating rule. For vmalert,
+the generator link must match a configured source's host, port, scheme, and
+path prefix (hostnames are case-insensitive). A link ending in `/vmalert/alert`
+can also match the configured base without the `/vmalert` suffix. PromTUI
+uses the group and rule IDs to select the rule. If it cannot identify an exact
+rule, Rules shows search results instead.
 
 Rules refreshes every 30 seconds while the tab is open. Sources are fetched
 independently: a failure leaves healthy sources visible, and a failed refresh

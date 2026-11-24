@@ -85,6 +85,11 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 	switch key.String() {
 	case "ctrl+c":
+		if m.alertNavigation.cancel != nil {
+			m.cancelAlertNavigation()
+			m.alerts.detailStatus = "Alert navigation cancelled"
+			return nil, true
+		}
 		if m.activeTab == rulesTab && m.rules.cancel != nil {
 			return m.cancelRulesRefresh(time.Now()), true
 		}

@@ -86,16 +86,16 @@ func TestLoadAlertQuery(t *testing.T) {
 		t.Fatal("p changed state from the Alerts list")
 	}
 	press(m, tea.KeyEnter)
-	if footer := ansi.Strip(m.footer()); !strings.Contains(footer, "p Load in PromQL") {
+	if footer := ansi.Strip(m.footer()); !strings.Contains(footer, "p Graph") || !strings.Contains(footer, "P Original") || !strings.Contains(footer, "r Rule") {
 		t.Fatalf("details footer did not advertise the action: %q", footer)
 	}
-	press(m, '?', 'p')
+	press(m, '?', 'P')
 	if m.activeTab != alertsTab || !m.alerts.help || m.editor.Value() != "old draft" {
 		t.Fatal("p reached Alert Details underneath Help")
 	}
-	press(m, tea.KeyEsc, 'p')
+	press(m, tea.KeyEsc, 'P')
 	if m.activeTab != promQLTab || m.alerts.dialog != alertNoDialog || m.scope() != editKeys || m.View().Cursor == nil {
-		t.Fatal("p did not close Alert Details and focus the PromQL editor")
+		t.Fatal("P did not close Alert Details and focus the PromQL editor")
 	}
 	if m.editor.Value() != expression || editor.Position(m.editor) != len(expression) || m.cursor != -1 {
 		t.Fatalf("incorrect draft or cursor after loading: %q at %d", m.editor.Value(), editor.Position(m.editor))
@@ -123,7 +123,6 @@ func TestLoadAlertQueryFailure(t *testing.T) {
 		{"https://vmalert.example.com/alert?expr=up", "Not a Prometheus graph URL"},
 		{"https://prometheus.example.com/graph?g0.expr=%XX", "Invalid generator URL query"},
 		{"https://prometheus.example.com/graph?g0.expr=" + strings.Repeat("a", 65537), "exceeds editor limits"},
-		{"https://prometheus.example.com/graph?g0.expr=%09up", "contains unsupported characters"},
 	} {
 		t.Run(tc.status, func(t *testing.T) {
 			m := New(Options{}, nil)
@@ -132,7 +131,7 @@ func TestLoadAlertQueryFailure(t *testing.T) {
 			pos := editor.Position(m.editor)
 			press(m, '1')
 			addAlertWithGenerator(m, tc.link)
-			press(m, tea.KeyEnter, 'p')
+			press(m, tea.KeyEnter, 'P')
 			if m.activeTab != alertsTab || m.alerts.dialog != alertDetails || m.alerts.err != nil ||
 				!strings.Contains(ansi.Strip(m.screen()), tc.status) {
 				t.Fatalf("expected an error in Alert Details: %q", m.alerts.detailStatus)

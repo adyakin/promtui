@@ -197,10 +197,14 @@ func (s *rulesState) indexSource(i int) {
 			key = fmt.Sprintf("id:%q", g.ID)
 		}
 		group := add(root, &ruleNode{title: g.Name, source: src, group: g}, key, groups)
+		rules := make(map[string]int)
 		for ri := range g.Rules {
 			r := &g.Rules[ri]
-			rule := &ruleNode{id: fmt.Sprintf("%s/%d", group.id, r.Position), title: r.Name, parent: group, source: src, group: g, rule: r}
-			group.children = append(group.children, rule)
+			key := fmt.Sprintf("pos:%d", r.Position)
+			if r.ID != "" {
+				key = "id:" + r.ID
+			}
+			rule := add(group, &ruleNode{title: r.Name, source: src, group: g, rule: r}, key, rules)
 			instances := make(map[string]int)
 			for ai := range r.Alerts {
 				a := &r.Alerts[ai]
