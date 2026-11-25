@@ -118,7 +118,7 @@ git push origin refs/tags/v0.1.0
 
 Use a remote that pushes to GitHub. If `origin` has multiple push URLs, Git sends the tag to each of them.
 
-To build the release archives locally without publishing, run `goreleaser release --snapshot --clean`.
+With GoReleaser installed, run `make release` to build snapshot archives and `checksums.txt` in `dist/` without publishing. This replaces any previous contents of `dist/`.
 
 ## License
 
