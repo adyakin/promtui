@@ -1,9 +1,14 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag (vX.Y.Z)'
+        required: true
+        type: string
+
+run-name: Release ${{ inputs.tag }}
 
 jobs:
   release:
@@ -11,9 +16,20 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Validate release tag
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a release tag in vX.Y.Z format."
+            exit 1
+          fi
+
       - name: Check out source and tags
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -34,3 +50,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GORELEASER_CURRENT_TAG: ${{ inputs.tag }}

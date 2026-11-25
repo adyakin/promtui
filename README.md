@@ -109,7 +109,7 @@ Omit `parameters` for a plain saved item. In a template, declare each `${name}` 
 
 ## Publishing a release
 
-Push a `vX.Y.Z` tag on a commit containing the release workflow to GitHub. The workflow runs the tests and publishes both archives and `checksums.txt`. No repository secrets are needed: the release job uses GitHub's built-in token.
+Once the manual workflow is on the default branch, push a `vX.Y.Z` tag for the commit you want to release. Tag a commit that includes the manual workflow: tagging an older commit that still has the tag-push trigger can start a release automatically.
 
 ```sh
 git tag -a v0.1.0 -m "Release v0.1.0"
@@ -118,7 +118,15 @@ git push origin refs/tags/v0.1.0
 
 Use a remote that pushes to GitHub. If `origin` has multiple push URLs, Git sends the tag to each of them.
 
-With GoReleaser installed, run `make release` to build snapshot archives and `checksums.txt` in `dist/` without publishing. This replaces any previous contents of `dist/`.
+With the GitHub CLI installed and authenticated, start the release workflow for the pushed tag:
+
+```sh
+make release TAG=v0.1.0
+```
+
+You can also use **Actions → Release → Run workflow** in GitHub and enter the tag. The workflow checks out that tag, runs the tests, and publishes both archives and `checksums.txt` using GitHub's built-in token.
+
+With GoReleaser installed, run `make release-local` to build snapshot archives and `checksums.txt` in `dist/` without publishing. This replaces any previous contents of `dist/`.
 
 ## License
 
