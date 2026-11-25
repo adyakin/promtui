@@ -15,6 +15,7 @@ import (
 // parser, not this tokenizer, is authoritative for syntax diagnostics.
 var tokens = regexp.MustCompile("(?m)#[^\\n]*|\"(?:\\\\.|[^\"\\\\])*\"?|'(?:\\\\.|[^'\\\\])*'?|`[^`]*`?|[a-zA-Z_:][a-zA-Z_0-9:]*|[0-9]+(?:\\.[0-9]+)?[a-z]*|=~|!~|!=|==|>=|<=|[^\\s]")
 var words = strings.Fields("and or unless by without on ignoring group_left group_right bool offset atan2 sum avg min max count group stddev stdvar topk bottomk count_values quantile limitk limit_ratio")
+var promQLParser = parser.NewParser(parser.Options{})
 
 type Token struct {
 	Start, End int
@@ -57,7 +58,7 @@ func Diagnostic(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return ""
 	}
-	_, err := parser.ParseExpr(s)
+	_, err := promQLParser.ParseExpr(s)
 	if err != nil {
 		return err.Error()
 	}

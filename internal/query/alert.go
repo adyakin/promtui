@@ -167,6 +167,8 @@ func filterAlertOutput(expression string, scope []string, labels map[string]stri
 
 type alertDialect uint8
 
+var promQLParser = parser.NewParser(parser.Options{})
+
 const (
 	prometheusAlert alertDialect = iota
 	metricsQLAlert
@@ -174,7 +176,7 @@ const (
 
 func validAlertExpression(expression string, dialect alertDialect) bool {
 	if dialect == prometheusAlert {
-		e, err := parser.ParseExpr(expression)
+		e, err := promQLParser.ParseExpr(expression)
 		return err == nil && e.Type() == parser.ValueTypeVector
 	}
 	_, err := metricsql.Parse(expression)
@@ -184,7 +186,7 @@ func validAlertExpression(expression string, dialect alertDialect) bool {
 func alertExpression(original string, allowMetricsQL bool) (expression string, removed bool, dialect alertDialect, root metricsql.Expr) {
 	expression = original
 	root, metricsErr := metricsql.Parse(original)
-	if prom, err := parser.ParseExpr(original); err == nil {
+	if prom, err := promQLParser.ParseExpr(original); err == nil {
 		if prom.Type() != parser.ValueTypeVector {
 			return original, false, prometheusAlert, nil
 		}
@@ -205,7 +207,7 @@ func alertExpression(original string, allowMetricsQL bool) (expression string, r
 				// Some Prometheus AST ranges end at an inner delimiter
 				// (e.g. a vector-matching clause inside a function).
 				// Fall back to the AST printer if the span is incomplete.
-				if parsed, err := parser.ParseExpr(expression); err != nil || parsed.String() != inner.String() {
+				if parsed, err := promQLParser.ParseExpr(expression); err != nil || parsed.String() != inner.String() {
 					expression = inner.String()
 				}
 				root, _ = metricsql.Parse(expression)

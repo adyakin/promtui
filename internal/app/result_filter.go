@@ -5,7 +5,6 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"github.com/prometheus/prometheus/promql/parser"
 	"promtui/internal/query"
 	"promtui/internal/ui"
 )
@@ -33,7 +32,7 @@ func matchesSeries(f fuzzyFilter, s query.Series) bool {
 	}
 	if len(s.Metric) == 0 && s.Labels != "" && s.Labels != "{}" {
 		// Some results have formatted labels but no original metric map.
-		metric, err := parser.ParseMetric(s.Labels)
+		metric, err := promQLParser.ParseMetric(s.Labels)
 		if err == nil {
 			return matchLabels(f, metric.Map())
 		}
