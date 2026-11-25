@@ -37,7 +37,9 @@ Run `promtui --version` (or `promtui version`) to check which binary you're runn
 
 Press **i** to edit a query and **Ctrl+Enter** or **Ctrl+G** to run it. Use **g** for Graph, **t** for Table, **0–5** to switch tabs (**[0] PromQL**, **[1] Alerts**, **[2] Silences**, **[3] Targets**, **[4] Routing**, **[5] Rules**), and **c** to change connections. Use **Alt+0–5** while typing outside modal dialogs. Press **?** for help outside text inputs and **Alt+S** (Option+S on macOS with Option configured as Alt) for request status on PromQL, Alerts, or Targets. PromTUI does not bind function keys. Graphs require a terminal with Kitty graphics support, such as Kitty or Rex.
 
-To investigate an alert, open **[1] Alerts**, select an alert, and press **Enter** to open its details. Press **p** to load the expression from its Prometheus generator link into the PromQL editor. This replaces the current draft without running the query or changing the connection, time range, or results. Review or edit it, then press **Ctrl+Enter** to run it. VictoriaMetrics/vmalert links are not supported.
+To investigate an alert, open **[1] Alerts**, select an alert, and press **Enter**. Press **p** to run a historical graph on the current connection. PromTUI removes a simple outer threshold and scopes the graph when it can verify that alert labels identify a result series. Check the query notice to see what changed. Press **P** to open the original expression without running it, or **r** to find the generating rule. This works with Prometheus graph links and [configured vmalert sources](docs/rules.md).
+
+The graph ends now and uses the smallest range preset that includes roughly an hour before activation, up to seven days. You can edit the query with **i** or adjust the range with **r** in PromQL. If scoping is unavailable, the graph may include other alert instances.
 
 To silence an alert, press **s** in Alert Details, or open **2 Silences** and press **n** to start from scratch. See [Managing silences](docs/silences.md) for preview, scheduling, editing, and expiration.
 

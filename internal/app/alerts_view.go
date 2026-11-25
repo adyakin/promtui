@@ -29,11 +29,9 @@ func (m *Model) alertsFooter() string {
 	case a.help:
 		hints, back = []string{"↑↓ Scroll"}, "Esc Close"
 	case a.dialog == alertDetails:
-		hints, back = []string{"↑↓ Scroll", "p Load in PromQL", "y Copy labels", "? Help"}, "Esc Close"
+		hints, back = []string{"p Graph", "P Original", "r Rule", "y Copy labels", "↑↓ Scroll", "? Help"}, "Esc Close"
 		if m.width < 29 {
-			hints = []string{"p PromQL", "↑↓ Scroll"}
-		} else if m.width < 41 {
-			hints[0], hints[1] = hints[1], hints[0]
+			hints = []string{"p Graph", "? Help"}
 		}
 		if m.opt.Connection.AlertmanagerURL != "" {
 			hints = append([]string{"s Silence"}, hints...)
@@ -383,7 +381,7 @@ func (m *Model) alertDialog(now time.Time) (name string, rows []string, width, r
 		name = "Alerts help"
 		switch a.dialog {
 		case alertDetails:
-			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll details", "p: load the generator query in PromQL", "y: copy all labels", "Esc or ?: return to details"}
+			lines = []string{"↑ / ↓ and PgUp / PgDn: scroll details", "p: run a scoped historical graph", "P: open the original expression without running", "r: find the generating rule", "y: copy all labels", "Esc or ?: return to details"}
 			if webLink(a.detail.GeneratorURL) {
 				lines = append(lines, "u: copy the generator URL")
 			}

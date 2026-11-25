@@ -2,6 +2,7 @@ package app
 
 import (
 	"slices"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -48,6 +49,8 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 		m.status, m.summary, m.notice, m.requestLabel = "Ready", "No query executed", "", ""
 
 		m.alerts.stop()
+		m.cancelAlertNavigation()
+		m.alertNavigation.cache.at = time.Time{}
 		requestID, tickQueued := m.alerts.requestID, m.alerts.tickQueued
 		structured := m.alerts.structured
 		m.alerts = newAlertsState(next.Alerts)

@@ -386,9 +386,9 @@ func (m *Model) alertsKey(k tea.KeyPressMsg) tea.Cmd {
 			if !a.help && a.dialog == alertRelated {
 				a.followRelatedAlert()
 			}
-		case "p":
+		case "p", "P", "r":
 			if !a.help && a.dialog == alertDetails {
-				return m.loadAlertQuery()
+				return m.navigateAlert(key)
 			}
 		case "s":
 			if !a.help && a.dialog == alertDetails {

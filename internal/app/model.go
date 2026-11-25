@@ -52,6 +52,7 @@ type Model struct {
 	shellState
 	promQLState
 	alerts          alertsState
+	alertNavigation alertNavigation
 	alertViews      alertViewSelection
 	silences        silencesState
 	targets         targetsState
@@ -76,6 +77,7 @@ type promQLState struct {
 	cursor                                int
 	draft                                 string
 	status, summary, notice, historyError string
+	alertQueryNotice                      string
 	queryPhase                            queryPhase
 	queryError                            queryError
 	id                                    int
@@ -173,6 +175,7 @@ func (m *Model) clearQueryResults() {
 	m.resultFilter.allRows, m.resultFilter.matches, m.resultFilter.before = nil, nil, ""
 	m.setGraphResult(query.Result{})
 	m.notice = ""
+	m.alertQueryNotice = ""
 	m.queryError = queryError{}
 	m.labelText, m.labelFields = "", nil
 	m.seriesRow, m.isolatedIndex = 0, 0
@@ -240,6 +243,9 @@ var presets = []time.Duration{15 * time.Minute, time.Hour, 6 * time.Hour, 24 * t
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.update(msg)
+	if m.alertNavigation.cancel != nil && !m.alertNavigationVisible() {
+		m.cancelAlertNavigation()
+	}
 	draw := m.syncGraph(msg)
 	raw := m.flushProgramStatus(msg)
 	if m.quitting && !m.saving && !m.programStatus.sending && !m.chart.sending && m.chart.displayed.cols == 0 {
@@ -268,6 +274,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case rulesLoaded:
 		m.mouse.last = mouseClick{}
 		return m, m.onRulesLoaded(v, time.Now())
+	case alertNavigationDone:
+		return m, m.onAlertNavigation(v)
 	case rulesTick:
 		return m, m.onRulesTick(time.Time(v))
 	case routingLoaded:
@@ -388,7 +396,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancel = nil
 		duration := v.elapsed.Round(time.Millisecond)
 		if v.err != nil {
+			notice := m.alertQueryNotice
 			m.clearQueryResults()
+			m.notice = notice
 			m.queryPhase = queryFailed
 			m.queryError = newQueryError(v.err, v.elapsed)
 			m.status, m.summary = m.queryError.heading(), "Query failed"
@@ -408,6 +418,13 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.summary = fmt.Sprintf("%d series · %s", len(m.table.Rows), m.requestLabel)
 		}
 		m.notice = strings.Join(v.result.Notices, "; ")
+		if m.alertQueryNotice != "" {
+			if m.notice != "" {
+				m.notice = m.alertQueryNotice + "; " + m.notice
+			} else {
+				m.notice = m.alertQueryNotice
+			}
+		}
 		if m.panel == seriesKeys {
 			m.refreshSeries()
 		}
