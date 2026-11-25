@@ -25,7 +25,7 @@ cp examples/config.example.yaml config.yaml
 
 Older release archives put `config.example.yaml` at the archive root; use that path if there is no `examples/` directory.
 
-To build from source instead, use Go 1.26.7 or newer:
+To build from source instead, use Go 1.26.11 or newer:
 
 ```sh
 make build
