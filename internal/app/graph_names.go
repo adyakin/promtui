@@ -10,6 +10,8 @@ import (
 	"promtui/internal/ui"
 )
 
+var promQLParser = parser.NewParser(parser.Options{})
+
 func graphSeriesNames(series []query.Series) []string {
 	names := make([]string, len(series))
 	labels := make([]map[string]string, len(series))
@@ -20,7 +22,7 @@ func graphSeriesNames(series []query.Series) []string {
 			labels[i][string(k)] = strings.TrimSpace(ui.Plain(string(v)))
 		}
 		if len(labels[i]) == 0 && s.Labels != "" && s.Labels != "{}" {
-			if metric, err := parser.ParseMetric(s.Labels); err == nil {
+			if metric, err := promQLParser.ParseMetric(s.Labels); err == nil {
 				for k, v := range metric.Map() {
 					labels[i][k] = strings.TrimSpace(ui.Plain(v))
 				}
