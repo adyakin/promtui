@@ -1,7 +1,7 @@
 # Managing Alertmanager silences
 
-Tabs are **0 PromQL**, **1 Alerts**, **2 Silences**, and **3 Targets**.
-Silences uses the selected connection’s `alertmanager_url` and TLS settings.
+Open Silences with **2**. It uses the selected connection’s `alertmanager_url`
+and TLS settings.
 It works even if the connection’s metrics endpoint is unavailable.
 
 ## Browse and inspect

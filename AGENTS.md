@@ -14,6 +14,7 @@
 - Remove temporary worktrees after successful integration using `git worktree remove`. Do not remove worktrees containing uncommitted changes.
 - Merge commit messages should include a meaningful summary of all new features, changes, and relevant fixes.
 - Complete the required Go and security checks before committing and pushing changes to the remote repository.
+- Document all new features in docs.
 
 ## Go checks
 

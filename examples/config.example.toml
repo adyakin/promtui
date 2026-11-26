@@ -1,4 +1,9 @@
 insecure_skip_verify = false
+# silence_creator = "on-call"
+
+# Use config.example.yaml for vmagent/vmalert lists, connection-specific
+# columns and search, or inline named Alerts views. Standalone named views
+# in alert_views.d/*.yaml beside this file also work with TOML.
 
 [general]
 default_connection = "local"
@@ -26,7 +31,7 @@ routing = "0s"
 [[connections]]
 name = "local"
 url = "http://localhost:9090"
-# alertmanager_url = "http://localhost:9093"
+# alertmanager_url = "http://localhost:9093" # Alerts, Silences, and Routing
 
 [[connections]]
 name = "cluster"

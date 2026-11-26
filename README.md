@@ -1,18 +1,8 @@
 # PromTUI
 
-A keyboard-driven terminal UI for **Prometheus** and **VictoriaMetrics**. Run PromQL queries, visualize time series, inspect Alertmanager alerts, and browse scrape targets without leaving your terminal.
+A keyboard-driven terminal UI for **Prometheus**, **VictoriaMetrics**, and **Alertmanager**.
 
 ![PromTUI showing a PromQL query and time-series graph](promtui.png)
-
-## Features
-
-- Multiline PromQL editor with syntax highlighting, completion, history, and parameterized saved queries
-- Instant-query tables and range-query graphs with series filtering
-- Alertmanager alert browser with sorting, fuzzy search, and reusable label filters
-- Alertmanager silence management with matcher previews
-- Read-only Alertmanager routing tree and receiver explorer
-- Prometheus and vmagent scrape-target inspection
-- Multiple backend connections with fast switching
 
 ## Quick start
 
@@ -35,34 +25,68 @@ cp examples/config.example.yaml config.yaml
 
 Run `promtui --version` (or `promtui version`) to check which binary you're running, without loading configuration. Use `./bin/promtui --version` to check a local build directly. Release binaries show their release tag; builds between tags identify the commit and indicate whether the working tree had uncommitted changes.
 
-Press **i** to edit a query and **Ctrl+Enter** or **Ctrl+G** to run it. Use **g** for Graph, **t** for Table, **0–5** to switch tabs (**[0] PromQL**, **[1] Alerts**, **[2] Silences**, **[3] Targets**, **[4] Routing**, **[5] Rules**), and **c** to change connections. Use **Alt+0–5** while typing outside modal dialogs. Press **?** for help outside text inputs and **Alt+S** (Option+S on macOS with Option configured as Alt) for request status on PromQL, Alerts, or Targets. PromTUI does not bind function keys. Graphs require a terminal with Kitty graphics support, such as Kitty or Rex.
+Try `up`: press **i**, type the query, and press **Ctrl+Enter** (or **Ctrl+G**). From results, press **g** to run a range graph or **t** to run an instant table. Graphs require a Kitty-compatible graphics terminal such as Kitty or Rex.
 
-To investigate an alert, open **[1] Alerts**, select an alert, and press **Enter**. Press **p** to run a historical graph on the current connection. PromTUI removes a simple outer threshold and scopes the graph when it can verify that alert labels identify a result series. Check the query notice to see what changed. Press **P** to open the original expression without running it, or **r** to find the generating rule. This works with Prometheus graph links and [configured vmalert sources](docs/rules.md).
+## Features by pane
 
-The graph ends now and uses the smallest range preset that includes roughly an hour before activation, up to seven days. You can edit the query with **i** or adjust the range with **r** in PromQL. If scoping is unavailable, the graph may include other alert instances.
+| Tab | What you can do |
+| --- | --- |
+| **0 PromQL** | Compose multiline queries with syntax highlighting, completion, local diagnostics, history, and saved templates. Run PromQL or backend-supported MetricsQL; local parser diagnostics don't block execution. Browse, sort, and filter result tables; graph time ranges, inspect samples, and hide or isolate series. Inspect or copy labels and query errors. |
+| **1 Alerts** | Search and sort Alertmanager alerts, including by label and annotation. Save and reuse label filters, switch named table views, and inspect silenced or inhibited alerts and their [inhibition relationships](docs/03-alerts.md#inhibition). Open the generating rule, load the original expression, graph the alert around activation, or start a silence from its labels. |
+| **2 Silences** | [Browse, preview, create, edit, and expire silences](docs/silences.md). Inspect matching alerts and schedule a start and end. Status changes locally as silences start or expire, even without polling. |
+| **3 Targets** | Browse active and dropped targets from Prometheus or multiple [vmagent sources](docs/configuration.md#scrape-target-sources). Filter by source, health, or search; customize columns; inspect scrape URLs, labels, timings, and errors. |
+| **4 Routing** | Explore the read-only [Alertmanager routing tree and receivers](docs/routing.md). Follow receiver references back to their routes and inspect or copy the selected receiver's YAML. |
+| **5 Rules** | Explore alerting and recording rules, groups, evaluations, errors, and alert instances from Prometheus or multiple [vmalert sources](docs/rules.md). Filter by rule type or state, or load a rule's expression into PromQL without running it. |
 
-To silence an alert, press **s** in Alert Details, or open **2 Silences** and press **n** to start from scratch. See [Managing silences](docs/silences.md) for preview, scheduling, editing, and expiration.
+Switch connections without restarting. Optional [mouse support](docs/configuration.md#mouse-and-terminal-links) enables clicks, scrolling, and graph hover values without rerunning the query. Alert and target URLs are terminal hyperlinks and can be copied from details. [Terminal program status](docs/configuration.md) reports explicit PromQL runs to compatible terminals.
 
-To see which receiver a route uses, open **4 Routing** and press **Enter** on a route. Press **v** to browse receivers and jump to routes that reference them. See [Exploring routes and receivers](docs/routing.md).
+## Keyboard shortcuts
 
-Open **5 Rules** to browse alerting and recording rules, inspect active alert instances, and load a rule's expression into PromQL with **p** without running it. See the [Rules Explorer guide](docs/rules.md) for shortcuts and `vmalert` setup.
+See the [complete keybinding tables by pane and mode](docs/keybindings.md), including search, details, saved-item editors, and confirmations. In-app footers show shortcuts for the current context. PromTUI does not bind function keys.
 
 ## Configuration
 
-Start with the [YAML config example](examples/config.example.yaml) or the [TOML config example](examples/config.example.toml). The default connection points to Prometheus at `http://localhost:9090`. To use the Alerts tab, set `alertmanager_url` for that connection, for example `http://localhost:9093`. See the [configuration reference](docs/configuration.md) for more options.
+Start with the [YAML example](examples/config.example.yaml) or the [TOML example](examples/config.example.toml). The default connection points to `http://localhost:9090`. To enable Alerts, Silences, and Routing, set the connection's `alertmanager_url` (for example `http://localhost:9093`). For VictoriaMetrics, use a Prometheus-compatible query URL and configure `vmagent` and `vmalert` separately if the query endpoint doesn't serve targets or rules. The [configuration reference](docs/configuration.md) covers URL prefixes, TLS, custom columns, and format support.
 
-Panes don’t poll by default. Press `r` to refresh the open data pane, or set a [per-pane auto-refresh interval](docs/configuration.md#pane-auto-refresh).
+Data panes load on first entry but don't poll by default. Press **r** in the pane's main view to refresh. To opt in for just one pane, add this to YAML:
 
-In Alerts, press `Enter` to see [inhibition sources, targets, and matching rules](docs/03-alerts.md#inhibition). When related alerts are available, press `i` to choose one and `Esc` to go back.
+```yaml
+auto_refresh:
+  alerts: 30s
+```
 
-Use **Ctrl+O** to open saved filters or [named table views](docs/configuration.md#named-alerts-views), and **D** to reset the view for the current connection. In **/** search, use **↑/↓** to highlight a suggested alert name before pressing **Enter**, or press **Enter** without selecting a suggestion to apply the text you typed.
+In TOML, put `alerts = "30s"` under `[auto_refresh]`. Omitted intervals or `0s` are off; only the visible pane polls.
 
 Default paths on macOS and Linux:
 
 - **Config:** `~/.config/promtui/config.yaml`, then `config.yml`, then `config.toml`
 - **Saved queries:** `~/.config/promtui/queries.yaml` (falls back to an existing `~/.local/share/promtui/queries.yaml`)
 - **Saved alert filters:** `~/.config/promtui/alerts.yaml`
+- **Extra Alerts layouts:** `alert_views.d/*.yaml` beside the active config
 - **History:** `~/.local/share/promtui/history.jsonl`
+
+Use `-config` for an alternate main config, `-connection` to choose a starting connection, and `-history` to override history storage. For example, start in range mode with `promtui -connection local -range 1h -step 30s`. `-end` pins evaluation time; an explicit `-start` requires a later `-end` instead of `-range` (both timestamps use RFC3339). Use `-graphics off` for a text-only terminal or `-graphics kitty` to force Kitty graphics.
+
+## Alert workflows
+
+### Graph an alert or save its expression
+
+In Alerts, select an alert and open details with **Enter**. Press **p** to run a historical graph ending now and reaching back to roughly an hour before activation, up to seven days. PromTUI can remove a simple outer threshold and scope the expression to the alert instance when it can verify the match; check the query notice to see what changed. To save the original expression instead, press uppercase **P**, then **Ctrl+S** in the editor. Press **r** in Alert Details to find the generating rule. PromTUI does not create or edit server-side alerting rules.
+
+### Create a named Alerts view
+
+Add this at the top level of `config.yaml` (merge it into any existing `alerts.views` mapping):
+
+```yaml
+alerts:
+  views:
+    compact:
+      columns:
+        - {source: labels.alertname, title: Alert}
+        - {source: labels.severity, title: Severity, width: 10}
+```
+
+Restart PromTUI, open Alerts, and choose `compact` with **Ctrl+O**. A view changes columns without changing your filters. Set `alerts.default_view: compact` under a YAML connection to make it the starting layout. See [named views](docs/configuration.md#named-alerts-views) for weights, annotation extraction, and standalone view files.
 
 ## Saved PromQL queries and alert filters
 
@@ -86,6 +110,8 @@ queries:
 `up` is generated by Prometheus for every scrape target: `1` means the last scrape succeeded, and `0` means it failed. For the second query, use a `job` label from the results of `up`, such as `prometheus` if Prometheus scrapes itself. Loading fills the editor without executing the query.
 
 ### Alerts: `alerts.yaml`
+
+To save a local alert query in the app, press **m** in Alerts, enter a matcher such as `severity = critical`, apply with **Ctrl+Enter**, then use **Ctrl+S** to name and save it. Reopen it with **Ctrl+O**. This filters the current Alertmanager results; it does not change alerts on the server.
 
 ```yaml
 alerts:

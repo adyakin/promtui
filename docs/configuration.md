@@ -36,6 +36,8 @@ are supported.
 Set `terminal.program_status` to `false` to suppress OSC 7501 reports. The
 setting does not change the in-app status or error messages.
 
+See the [keyboard reference](keybindings.md) for pane and dialog shortcuts.
+
 ## Pane auto-refresh
 
 Alerts, Rules, Targets, Silences, and Routing load on first entry. Press `r`
@@ -253,7 +255,9 @@ config (normally `~/.config/promtui/alert_views.d/`). Each external file starts
 with `views:` instead of `alerts:`, followed by the same mapping of names to
 layouts. Files are loaded alphabetically. Duplicate names, including names
 from the main config, are rejected rather than merged. This is separate from
-`alerts.yaml`, which stores saved label filters.
+`alerts.yaml`, which stores saved label filters. Standalone view files also
+load alongside a TOML config; inline views and `alerts.default_view` require
+YAML.
 
 Use **Ctrl+O** in Alerts to open a filter or a view. View selections are
 remembered separately for each connection until exit. Press uppercase **D**
@@ -266,8 +270,8 @@ HTTPS certificates are verified by default. In either format, the top-level
 `insecure_skip_verify` applies to all connections unless the connection sets its
 own value. An explicit `false` overrides a global `true`, just as a connection's
 `true` overrides a global `false`. The effective value applies to PromQL queries,
-editor suggestions, Alertmanager, and every target source for that connection.
-Target sources do not have their own TLS overrides.
+editor suggestions, Alertmanager, and every target and rule source for that
+connection. Individual target and rule sources do not have TLS overrides.
 
 Use `true` only when you knowingly accept the risk of an unverified endpoint:
 it allows impersonation of the HTTPS server.
