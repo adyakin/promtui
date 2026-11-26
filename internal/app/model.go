@@ -28,6 +28,7 @@ type Options struct {
 	ProbeGraphics         bool
 	ProgramStatus         bool
 	Mouse                 bool
+	StartPane             string // tab name; empty starts in PromQL
 	Connection            config.Connection
 	Connections           []config.Connection
 	AlertViews            map[string]config.TableView
@@ -123,10 +124,17 @@ func (m *Model) resize(w, h int) {
 	m.sizeRulesInput()
 }
 func (m *Model) Init() tea.Cmd {
-	if m.opt.ProbeGraphics {
-		return tea.Raw(kitty.Probe())
+	var open tea.Cmd
+	for i, name := range tabs {
+		if strings.EqualFold(m.opt.StartPane, name) {
+			open = m.switchTab(tabID(i))
+			break
+		}
 	}
-	return nil
+	if m.opt.ProbeGraphics {
+		return tea.Batch(open, tea.Raw(kitty.Probe()))
+	}
+	return open
 }
 func (m *Model) HistoryError() string { return m.historyError }
 func (m *Model) save() tea.Cmd {

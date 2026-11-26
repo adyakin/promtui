@@ -47,7 +47,9 @@ any dollar signs, preserving older collections. Use `parameters: []` to
 enable template escaping without a prompt.
 
 For file-based setup, see the [README](../README.md#promql-queriesyaml) and
-[`examples/queries.yaml`](../examples/queries.yaml).
+[`examples/queries.yaml`](../examples/queries.yaml). PromTUI writes
+`queries.yaml` with two-space indentation. Existing files with four-space
+indentation remain readable and are reformatted when a saved query changes.
 
 ## Saved Alerts
 

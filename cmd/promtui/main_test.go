@@ -2,11 +2,42 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"testing"
 )
+
+func TestStartupPaneFlags(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{"-promql"}, "promql"},
+		{[]string{"-alerts"}, "alerts"},
+		{[]string{"--silences"}, "silences"},
+		{[]string{"-targets"}, "targets"},
+		{[]string{"-routing"}, "routing"},
+		{[]string{"-rules"}, "rules"},
+		{[]string{"-alerts=false", "-rules"}, "rules"},
+	} {
+		flags := flag.NewFlagSet("promtui", flag.ContinueOnError)
+		selected := registerPaneFlags(flags)
+		if err := flags.Parse(tc.args); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := selected(); err != nil || got != tc.want {
+			t.Errorf("startup pane for %v = %q, %v; want %q", tc.args, got, err, tc.want)
+		}
+	}
+	err := run([]string{"-alerts", "-rules", "-config", "missing.yaml"}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "-alerts and -rules cannot be combined") {
+		t.Fatalf("expected conflicting pane error before loading config, got %v", err)
+	}
+}
 
 func TestSavedQueriesPath(t *testing.T) {
 	configDir, dataDir := defaultDirs(t.TempDir())

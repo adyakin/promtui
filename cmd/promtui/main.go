@@ -37,17 +37,19 @@ func run(args []string, stdout io.Writer) error {
 	step := flags.Duration("step", 0, "range step (default: automatic)")
 	graphics := flags.String("graphics", "auto", "range graphs: auto (Rex/Kitty), kitty, or off")
 	showVersion := flags.Bool("version", false, "print the PromTUI version and exit")
+	startPane := registerPaneFlags(flags)
 	flags.Parse(args)
 	if *showVersion {
 		return printVersion(stdout)
 	}
+	pane, err := startPane()
+	if err != nil {
+		return err
+	}
 	if homeErr != nil {
 		return homeErr
 	}
-	var (
-		cfg config.Config
-		err error
-	)
+	var cfg config.Config
 	if *path == "" {
 		cfg, err = config.LoadDefault(dir)
 	} else {
@@ -61,6 +63,7 @@ func run(args []string, stdout io.Writer) error {
 	}
 	o := app.Options{Connections: cfg.Connections, Timeout: cfg.Query.Timeout, Window: cfg.Query.Range, Step: *step, Limit: cfg.Query.MaxSeries, HistoryPath: *hist, HistoryLimit: cfg.General.History}
 	o.AlertViews = cfg.AlertViews
+	o.StartPane = pane
 	o.AutoRefresh = cfg.AutoRefresh
 	o.SavedQueriesPath = savedQueriesPath(dir, dataDir)
 	o.SavedAlertsPath = filepath.Join(dir, "alerts.yaml")
@@ -119,6 +122,27 @@ func run(args []string, stdout io.Writer) error {
 		return fmt.Errorf("%s", m.HistoryError())
 	}
 	return err
+}
+
+// registerPaneFlags returns a selector to call after parsing the flag set.
+func registerPaneFlags(flags *flag.FlagSet) func() (string, error) {
+	names := [...]string{"promql", "alerts", "silences", "targets", "routing", "rules"}
+	var enabled [len(names)]bool
+	for i, name := range names {
+		flags.BoolVar(&enabled[i], name, false, "open the "+name+" pane at startup")
+	}
+	return func() (string, error) {
+		var pane string
+		for i, name := range names {
+			if enabled[i] {
+				if pane != "" {
+					return "", fmt.Errorf("choose only one startup pane: -%s and -%s cannot be combined", pane, name)
+				}
+				pane = name
+			}
+		}
+		return pane, nil
+	}
 }
 
 func main() {
