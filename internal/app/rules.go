@@ -12,16 +12,12 @@ import (
 	"promtui/internal/config"
 )
 
-const rulesRefreshInterval = 30 * time.Second
-
 type rulesLoaded struct {
 	id     uint64
 	source int
 	data   api.Rules
 	err    error
 }
-
-type rulesTick time.Time
 
 type ruleSourceState struct {
 	config.RuleSource
@@ -41,12 +37,11 @@ type ruleNode struct {
 }
 
 type rulesState struct {
-	sources    []ruleSourceState
-	cancel     context.CancelFunc
-	requestID  uint64
-	pending    int
-	lastDone   time.Time
-	tickQueued bool
+	sources   []ruleSourceState
+	cancel    context.CancelFunc
+	requestID uint64
+	pending   int
+	lastDone  time.Time
 
 	roots, visible                []*ruleNode
 	expanded                      map[string]bool
@@ -103,11 +98,7 @@ func (m *Model) refreshRules() tea.Cmd {
 	s := &m.rules
 	s.stop()
 	s.notice = ""
-	timeout := m.opt.Timeout
-	if timeout <= 0 {
-		timeout = rulesRefreshInterval
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), m.requestTimeout())
 	s.requestID++
 	id := s.requestID
 	s.cancel, s.pending = cancel, len(s.sources)
@@ -149,30 +140,30 @@ func (m *Model) onRulesLoaded(msg rulesLoaded, now time.Time) tea.Cmd {
 }
 
 func (m *Model) rulesOnEntry(now time.Time) tea.Cmd {
-	if now.Sub(m.rules.lastDone) >= rulesRefreshInterval {
+	if m.rules.lastDone.IsZero() {
 		return m.refreshRules()
 	}
-	return m.scheduleRulesTick(now)
+	return m.onRulesTick(now)
 }
 
 func (m *Model) scheduleRulesTick(now time.Time) tea.Cmd {
 	s := &m.rules
-	if m.activeTab != rulesTab || m.quitting || s.tickQueued || s.cancel != nil {
-		return nil
+	var due time.Time
+	if s.cancel == nil {
+		due = refreshDeadline(s.lastDone, m.opt.AutoRefresh.Rules)
 	}
-	s.tickQueued = true
-	return tea.Tick(max(0, s.lastDone.Add(rulesRefreshInterval).Sub(now)), func(t time.Time) tea.Msg {
-		return rulesTick(t)
-	})
+	return m.schedulePaneTick(rulesTab, due, now)
 }
 
 func (m *Model) onRulesTick(now time.Time) tea.Cmd {
 	s := &m.rules
-	s.tickQueued = false
 	if s.cancel != nil || m.activeTab != rulesTab {
 		return nil
 	}
-	return m.rulesOnEntry(now)
+	if refreshDue(refreshDeadline(s.lastDone, m.opt.AutoRefresh.Rules), now) {
+		return m.refreshRules()
+	}
+	return m.scheduleRulesTick(now)
 }
 
 func (s *rulesState) indexSource(i int) {

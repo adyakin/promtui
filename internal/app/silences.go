@@ -64,7 +64,6 @@ type silencesState struct {
 	listErr          error
 	notice           string
 	wantedID         string
-	tickQueued       bool
 	serial, listID   uint64
 	listCancel       context.CancelFunc
 
@@ -86,7 +85,6 @@ type silencesState struct {
 	confirmErr    error
 }
 
-type silencesTick time.Time
 type silencesLoaded struct {
 	id   uint64
 	rows []alertmanager.Silence
@@ -224,44 +222,45 @@ func (m *Model) refreshSilences() tea.Cmd {
 }
 
 func (m *Model) onSilencesEntry(now time.Time) tea.Cmd {
-	s := &m.silences
-	s.rebuild(s.selection(), s.row, now)
-	if s.lastOK.IsZero() || now.Sub(s.lastDone) >= alertRefreshInterval {
+	if m.silences.lastOK.IsZero() {
 		return m.refreshSilences()
 	}
-	return m.scheduleSilencesTick(now)
+	return m.onSilencesTick(now)
+}
+
+func (m *Model) silencesRefreshDeadline() time.Time {
+	s := &m.silences
+	if s.listCancel != nil || errors.Is(s.listErr, alertmanager.ErrConfig) {
+		return time.Time{}
+	}
+	return refreshDeadline(s.lastDone, m.opt.AutoRefresh.Silences)
 }
 
 func (m *Model) scheduleSilencesTick(now time.Time) tea.Cmd {
-	s := &m.silences
-	if m.activeTab != silencesTab || m.quitting || s.tickQueued || s.listCancel != nil || s.lastDone.IsZero() ||
-		errors.Is(s.listErr, alertmanager.ErrConfig) {
-		return nil
-	}
-	// Wake up for a local status transition even when the API isn't due yet.
-	next := s.lastDone.Add(alertRefreshInterval)
-	for _, row := range s.rows {
+	// Local status transitions do not depend on API polling.
+	next := m.silencesRefreshDeadline()
+	for _, row := range m.silences.rows {
 		if row.State(now) != "expired" {
 			for _, t := range []time.Time{row.StartsAt, row.EndsAt} {
-				if t.After(now) && t.Before(next) {
+				if t.After(now) && (next.IsZero() || t.Before(next)) {
 					next = t
 				}
 			}
 		}
 	}
-	s.tickQueued = true
-	return tea.Tick(max(0, next.Sub(now)), func(t time.Time) tea.Msg { return silencesTick(t) })
+	return m.schedulePaneTick(silencesTab, next, now)
 }
 
 func (m *Model) onSilencesTick(now time.Time) tea.Cmd {
 	s := &m.silences
-	s.tickQueued = false
 	if m.activeTab != silencesTab {
 		return nil
 	}
 	s.rebuild(s.selection(), s.row, now)
-	if now.Sub(s.lastDone) >= alertRefreshInterval && !errors.Is(s.listErr, alertmanager.ErrConfig) {
-		return m.refreshSilences()
+	if refreshDue(m.silencesRefreshDeadline(), now) {
+		if cmd := m.refreshSilences(); cmd != nil {
+			return tea.Batch(cmd, m.scheduleSilencesTick(now))
+		}
 	}
 	return m.scheduleSilencesTick(now)
 }

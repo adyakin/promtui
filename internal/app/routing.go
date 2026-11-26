@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -43,6 +45,7 @@ type routingState struct {
 	err       error
 	cancel    context.CancelFunc
 	requestID uint64
+	lastDone  time.Time
 
 	routes, receivers routingView
 	showReceivers     bool
@@ -100,21 +103,53 @@ func (m *Model) refreshRouting() tea.Cmd {
 	}
 }
 
-func (s *routingState) loaded(msg routingLoaded) {
+func (m *Model) routingOnEntry(now time.Time) tea.Cmd {
+	if m.routing.data == nil {
+		return m.refreshRouting()
+	}
+	return m.onRoutingTick(now)
+}
+
+func (m *Model) routingRefreshDeadline() time.Time {
+	s := &m.routing
+	if s.cancel != nil || errors.Is(s.err, alertmanager.ErrConfig) {
+		return time.Time{}
+	}
+	return refreshDeadline(s.lastDone, m.opt.AutoRefresh.Routing)
+}
+
+func (m *Model) scheduleRoutingTick(now time.Time) tea.Cmd {
+	return m.schedulePaneTick(routingTab, m.routingRefreshDeadline(), now)
+}
+
+func (m *Model) onRoutingTick(now time.Time) tea.Cmd {
+	if m.activeTab == routingTab && refreshDue(m.routingRefreshDeadline(), now) {
+		return m.refreshRouting()
+	}
+	return m.scheduleRoutingTick(now)
+}
+
+func (m *Model) onRoutingLoaded(msg routingLoaded, now time.Time) tea.Cmd {
+	s := &m.routing
 	if msg.id != s.requestID || s.cancel == nil {
-		return
+		return nil
 	}
 	s.cancel()
+	s.lastDone = now
 	s.cancel, s.err, s.errorOffset = nil, msg.err, 0
-	if msg.err != nil {
-		return // Retain the previous successful snapshot on this connection.
+	if msg.err == nil {
+		s.setData(msg.data)
 	}
+	return m.scheduleRoutingTick(now)
+}
+
+func (s *routingState) setData(data *alertmanager.Routing) {
 	route, receiver := s.routes.selected, s.receivers.selected
 	var reference string
 	if s.dialog == routingReferencesDialog {
 		reference = s.data.References[receiver][s.dialogRow]
 	}
-	s.data = msg.data
+	s.data = data
 	s.receiverIndex = make(map[string]int, len(s.data.Receivers))
 	for i, receiver := range s.data.Receivers {
 		s.receiverIndex[receiver.Name] = i

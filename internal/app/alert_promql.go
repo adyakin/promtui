@@ -105,10 +105,7 @@ func (m *Model) navigateAlert(action string) tea.Cmd {
 	}
 
 	n := &m.alertNavigation
-	timeout := m.opt.Timeout
-	if timeout <= 0 {
-		timeout = alertRefreshInterval
-	}
+	timeout := m.requestTimeout()
 	ctx, cancel := context.WithCancel(context.Background())
 	n.cancel, n.row = cancel, row
 	msg := alertNavigationDone{serial: n.serial, action: action, row: row, source: source,
@@ -126,7 +123,7 @@ func (m *Model) navigateAlert(action string) tea.Cmd {
 		ruleAPI = api.Client{Base: s.URL, HTTP: httpClient}
 		cachedRules = s.data
 	}
-	if ref.AlertID != "" && sameAlertNavigation(n.cache.row, row) && time.Since(n.cache.at) < rulesRefreshInterval {
+	if ref.AlertID != "" && sameAlertNavigation(n.cache.row, row) && time.Since(n.cache.at) < 30*time.Second {
 		msg.meta, msg.fromCache = n.cache.VMAlert, true
 	}
 	return func() tea.Msg {
@@ -286,7 +283,7 @@ func (m *Model) loadPromQLExpression(expression string) (tea.Cmd, error) {
 		return nil, errors.New("Query exceeds editor limits or contains unsupported characters")
 	}
 
-	m.activeTab = promQLTab
+	m.switchTab(promQLTab)
 	m.dismiss()
 	m.panel = 0
 	if m.resultFilter.input.Focused() {

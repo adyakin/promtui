@@ -146,7 +146,8 @@ func TestAlertInhibitionUnavailableConfigIsNonfatal(t *testing.T) {
 		]`)
 	}))
 	defer server.Close()
-	m := New(Options{Timeout: time.Second, Connection: config.Connection{AlertmanagerURL: server.URL}}, nil)
+	const interval = 17 * time.Second
+	m := New(Options{Timeout: time.Second, AutoRefresh: config.AutoRefresh{Alerts: interval}, Connection: config.Connection{AlertmanagerURL: server.URL}}, nil)
 	m.resize(80, 22)
 	now := time.Now()
 	cmd := pressAlt(m, '1')
@@ -171,11 +172,11 @@ func TestAlertInhibitionUnavailableConfigIsNonfatal(t *testing.T) {
 		strings.Contains(text, "No configured rule matches") {
 		t.Fatal(text)
 	}
-	if m.onAlertsTick(now.Add(alertRefreshInterval)) == nil {
+	if m.onPaneRefreshTick(m.paneTimer.id, now.Add(interval)) == nil {
 		t.Fatal("background refresh did not start")
 	}
 	a := &m.alerts
-	m.onAlertsCompleted(alertsCompleted{id: a.requestID, err: alertmanager.ErrAuth}, now.Add(alertRefreshInterval))
+	m.onAlertsCompleted(alertsCompleted{id: a.requestID, err: alertmanager.ErrAuth}, now.Add(interval))
 	if a.err != nil || a.refreshErr == nil || a.dialog != alertDetails || a.detail.Fingerprint != "source" || len(a.visible) != 2 {
 		t.Fatal("failed background refresh did not preserve the alert snapshot")
 	}

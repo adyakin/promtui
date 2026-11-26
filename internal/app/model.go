@@ -31,6 +31,7 @@ type Options struct {
 	Connection            config.Connection
 	Connections           []config.Connection
 	AlertViews            map[string]config.TableView
+	AutoRefresh           config.AutoRefresh
 	Timeout, Window, Step time.Duration
 	End                   time.Time
 	Ranged                bool
@@ -58,6 +59,7 @@ type Model struct {
 	targets         targetsState
 	routing         routingState
 	rules           rulesState
+	paneTimer       paneRefreshTimer
 	httpClients     map[bool]*http.Client
 	programStatus   terminalStatus
 	parameterDialog *parameterDialog
@@ -276,12 +278,11 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onRulesLoaded(v, time.Now())
 	case alertNavigationDone:
 		return m, m.onAlertNavigation(v)
-	case rulesTick:
-		return m, m.onRulesTick(time.Time(v))
+	case paneRefreshTick:
+		return m, m.onPaneRefreshTick(v, time.Now())
 	case routingLoaded:
 		m.mouse.last = mouseClick{}
-		m.routing.loaded(v)
-		return m, nil
+		return m, m.onRoutingLoaded(v, time.Now())
 	case receiverYAMLCopied:
 		if m.routing.requestID == v.requestID {
 			m.routing.copyStatus = "Copied receiver YAML"
@@ -293,8 +294,6 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case silencesLoaded:
 		m.mouse.last = mouseClick{}
 		return m, m.onSilencesLoaded(v, time.Now())
-	case silencesTick:
-		return m, m.onSilencesTick(time.Time(v))
 	case silenceDetailLoaded:
 		return m, m.onSilenceDetailLoaded(v)
 	case silenceMatchesLoaded:
@@ -310,8 +309,6 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case targetsCompleted:
 		m.mouse.last = mouseClick{}
 		return m, m.onTargetsCompleted(v, time.Now())
-	case targetsTick:
-		return m, m.onTargetsTick(time.Time(v))
 	case targetLabelsCopied:
 		if m.targets.dialog == targetDetails && m.targets.dialogID == v.dialogID {
 			m.targets.copyStatus = "Copied labels"
@@ -323,8 +320,6 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case alertsCompleted:
 		m.mouse.last = mouseClick{}
 		return m, m.onAlertsCompleted(v, time.Now())
-	case alertsTick:
-		return m, m.onAlertsTick(time.Time(v))
 	case templateClipboard:
 		if m.quitting || m.parameterDialog != nil {
 			return m, nil

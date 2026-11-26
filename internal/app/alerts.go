@@ -13,8 +13,6 @@ import (
 	"promtui/internal/config"
 )
 
-const alertRefreshInterval = 30 * time.Second
-
 var errAlertsCancelled = errors.New("Alertmanager refresh cancelled")
 
 const (
@@ -40,7 +38,6 @@ type alertsCompleted struct {
 	inhibition    *alertmanager.Inhibition
 	inhibitionErr error
 }
-type alertsTick time.Time
 type alertLabelsCopied struct{ err error }
 
 type alertsState struct {
@@ -75,7 +72,6 @@ type alertsState struct {
 
 	requestID   uint64
 	cancel      context.CancelFunc
-	tickQueued  bool
 	background  bool
 	lastOK      time.Time
 	lastDone    time.Time
@@ -194,11 +190,7 @@ func (m *Model) fetchAlerts() tea.Cmd {
 	if m.quitting || base == "" || a.cancel != nil {
 		return nil
 	}
-	timeout := m.opt.Timeout
-	if timeout <= 0 {
-		timeout = alertRefreshInterval
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), m.requestTimeout())
 	a.cancel = cancel
 	a.background = false
 	a.requestID++
@@ -231,28 +223,24 @@ func (m *Model) fetchAlerts() tea.Cmd {
 
 func (m *Model) alertsOnEntry(now time.Time) tea.Cmd {
 	a := &m.alerts
-	if a.lastOK.IsZero() || now.Sub(a.lastOK) >= alertRefreshInterval {
+	if a.lastOK.IsZero() {
 		return m.refreshAlerts()
 	}
-	return m.scheduleAlertsTick(now)
+	return m.onAlertsTick(now)
 }
 
-// A pending tick is reused across tab switches and manual refreshes. It only
-// starts a request while visible, then completion schedules the next tick.
 func (m *Model) scheduleAlertsTick(now time.Time) tea.Cmd {
 	a := &m.alerts
-	if m.activeTab != alertsTab || m.quitting || a.tickQueued || a.cancel != nil || a.lastDone.IsZero() ||
-		errors.Is(a.err, alertmanager.ErrConfig) {
-		return nil
+	var due time.Time
+	if a.cancel == nil && !errors.Is(a.err, alertmanager.ErrConfig) {
+		due = refreshDeadline(a.lastDone, m.opt.AutoRefresh.Alerts)
 	}
-	a.tickQueued = true
-	return tea.Tick(max(0, a.lastDone.Add(alertRefreshInterval).Sub(now)), func(t time.Time) tea.Msg { return alertsTick(t) })
+	return m.schedulePaneTick(alertsTab, due, now)
 }
 
 func (m *Model) onAlertsTick(now time.Time) tea.Cmd {
 	a := &m.alerts
-	a.tickQueued = false
-	if now.Sub(a.lastDone) >= alertRefreshInterval && !errors.Is(a.err, alertmanager.ErrConfig) {
+	if refreshDue(refreshDeadline(a.lastDone, m.opt.AutoRefresh.Alerts), now) && !errors.Is(a.err, alertmanager.ErrConfig) {
 		cmd := m.refreshAlerts()
 		if cmd != nil {
 			a.background = true

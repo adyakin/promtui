@@ -62,7 +62,8 @@ can also match the configured base without the `/vmalert` suffix. PromTUI
 uses the group and rule IDs to select the rule. If it cannot identify an exact
 rule, Rules shows search results instead.
 
-Rules refreshes every 30 seconds while the tab is open. Sources are fetched
+Rules refreshes with **r** or when enabled with
+[`auto_refresh.rules`](configuration.md#pane-auto-refresh). Sources are fetched
 independently: a failure leaves healthy sources visible, and a failed refresh
 keeps the last successful data for that source marked **Stale**. Select the
 source row to inspect its error.

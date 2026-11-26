@@ -4,16 +4,20 @@ import (
 	"context"
 	"crypto/tls"
 	"net/http"
+	"time"
 
 	"promtui/internal/alertmanager"
 )
 
-func (m *Model) alertmanagerRequest() (alertmanager.Client, context.Context, context.CancelFunc) {
-	timeout := m.opt.Timeout
-	if timeout <= 0 {
-		timeout = alertRefreshInterval
+func (m *Model) requestTimeout() time.Duration {
+	if m.opt.Timeout > 0 {
+		return m.opt.Timeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return 30 * time.Second
+}
+
+func (m *Model) alertmanagerRequest() (alertmanager.Client, context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), m.requestTimeout())
 	return alertmanager.Client{Base: m.opt.Connection.AlertmanagerURL, HTTP: m.connectionHTTP()}, ctx, cancel
 }
 

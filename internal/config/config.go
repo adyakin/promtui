@@ -56,12 +56,22 @@ type uiSettings struct {
 	Mouse bool `toml:"mouse" yaml:"mouse"`
 }
 
+// AutoRefresh configures polling intervals for the visible data pane. Zero disables polling.
+type AutoRefresh struct {
+	Alerts   time.Duration `toml:"alerts" yaml:"alerts"`
+	Rules    time.Duration `toml:"rules" yaml:"rules"`
+	Targets  time.Duration `toml:"targets" yaml:"targets"`
+	Silences time.Duration `toml:"silences" yaml:"silences"`
+	Routing  time.Duration `toml:"routing" yaml:"routing"`
+}
+
 type settings struct {
 	SilenceCreator string           `toml:"silence_creator" yaml:"silence_creator"`
 	General        generalSettings  `toml:"general" yaml:"general"`
 	Query          querySettings    `toml:"query" yaml:"query"`
 	Terminal       terminalSettings `toml:"terminal" yaml:"terminal"`
 	UI             uiSettings       `toml:"ui" yaml:"ui"`
+	AutoRefresh    AutoRefresh      `toml:"auto_refresh" yaml:"auto_refresh"`
 }
 
 type Config struct {
@@ -201,6 +211,18 @@ func resolveConfig(dir string, s settings, insecure bool, raw []rawConnection, v
 		return c, fmt.Errorf("query.default_range must be positive")
 	case c.Query.Timeout <= 0:
 		return c, fmt.Errorf("query.timeout must be positive")
+	}
+	for _, pane := range []struct {
+		name     string
+		interval time.Duration
+	}{
+		{"alerts", c.AutoRefresh.Alerts}, {"rules", c.AutoRefresh.Rules},
+		{"targets", c.AutoRefresh.Targets}, {"silences", c.AutoRefresh.Silences},
+		{"routing", c.AutoRefresh.Routing},
+	} {
+		if pane.interval < 0 {
+			return c, fmt.Errorf("auto_refresh.%s must not be negative", pane.name)
+		}
 	}
 	return c, nil
 }
