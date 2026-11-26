@@ -228,10 +228,16 @@ func (s Snapshot) commit(next []Query) (Snapshot, error) {
 		}
 		return s, nil
 	}
-	raw, err := yaml.Marshal(collection{next})
-	if err != nil {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(collection{next}); err != nil {
 		return fail(err)
 	}
+	if err := enc.Close(); err != nil {
+		return fail(err)
+	}
+	raw := buf.Bytes()
 	if err := saveditems.Write(s.path, s.version, raw); err != nil {
 		return fail(err)
 	}

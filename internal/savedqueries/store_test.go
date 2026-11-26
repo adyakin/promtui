@@ -104,6 +104,37 @@ func TestExpressionEncoding(t *testing.T) {
 	}
 }
 
+func TestWritesTwoSpaceYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queries.yaml")
+	const legacy = `queries:
+    - name: CPU
+      expression: |-
+        100 * (1 - avg by (instance) (
+          rate(node_cpu_seconds_total{mode="idle"}[5m])
+        ))
+`
+	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := mustOpen(t, path)
+	if _, err := s.Rename(0, "CPU idle"); err != nil {
+		t.Fatal(err)
+	}
+	const want = `queries:
+  - name: CPU idle
+    expression: |-
+      100 * (1 - avg by (instance) (
+        rate(node_cpu_seconds_total{mode="idle"}[5m])
+      ))
+`
+	if got := mustRead(t, path); got != want {
+		t.Fatalf("queries.yaml =\n%s\nwant:\n%s", got, want)
+	}
+	if got, want := mustOpen(t, path).Queries()[0].Expression, s.Queries()[0].Expression; got != want {
+		t.Errorf("expression changed from %q to %q", want, got)
+	}
+}
+
 func TestRejectsInvalidChanges(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "queries.yaml")
 	s, err := mustOpen(t, path).Add("Metrics", "up", nil)
