@@ -12,10 +12,7 @@ import (
 	"promtui/internal/config"
 )
 
-const (
-	targetRefreshInterval = 30 * time.Second
-	targetConcurrency     = 4
-)
+const targetConcurrency = 4
 
 var errTargetsCancelled = errors.New("target refresh cancelled")
 
@@ -48,8 +45,6 @@ type targetsCompleted struct {
 	data       api.Targets
 	err        error
 }
-
-type targetsTick time.Time
 
 type targetDialog int
 
@@ -85,7 +80,6 @@ type targetsState struct {
 	cancel          context.CancelFunc
 	next, remaining int
 	lastDone        time.Time
-	tickQueued      bool
 }
 
 func newTargetsState(conn config.Connection) targetsState {
@@ -227,10 +221,7 @@ func (m *Model) nextTargetsRequest() tea.Cmd {
 	}
 	i, id, ctx := a.next, a.requestID, a.ctx
 	a.next++
-	timeout := m.opt.Timeout
-	if timeout <= 0 {
-		timeout = targetRefreshInterval
-	}
+	timeout := m.requestTimeout()
 	client := api.Client{Base: a.sources[i].URL, HTTP: m.connectionHTTP()}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -272,28 +263,24 @@ func (m *Model) onTargetsCompleted(v targetsCompleted, now time.Time) tea.Cmd {
 
 func (m *Model) targetsOnEntry(now time.Time) tea.Cmd {
 	a := &m.targets
-	if a.lastDone.IsZero() || now.Sub(a.lastDone) >= targetRefreshInterval ||
-		slices.ContainsFunc(a.sources, func(s targetSourceState) bool { return s.err != nil }) {
+	if a.lastDone.IsZero() || !slices.ContainsFunc(a.sources, func(s targetSourceState) bool { return !s.lastOK.IsZero() }) {
 		return m.refreshTargets()
 	}
-	return m.scheduleTargetsTick(now)
+	return m.onTargetsTick(now)
 }
 
 func (m *Model) scheduleTargetsTick(now time.Time) tea.Cmd {
 	a := &m.targets
-	if m.activeTab != targetsTab || m.quitting || a.tickQueued || a.cancel != nil || a.lastDone.IsZero() {
-		return nil
+	var due time.Time
+	if a.cancel == nil {
+		due = refreshDeadline(a.lastDone, m.opt.AutoRefresh.Targets)
 	}
-	a.tickQueued = true
-	return tea.Tick(max(0, a.lastDone.Add(targetRefreshInterval).Sub(now)), func(t time.Time) tea.Msg {
-		return targetsTick(t)
-	})
+	return m.schedulePaneTick(targetsTab, due, now)
 }
 
 func (m *Model) onTargetsTick(now time.Time) tea.Cmd {
 	a := &m.targets
-	a.tickQueued = false
-	if now.Sub(a.lastDone) >= targetRefreshInterval {
+	if refreshDue(refreshDeadline(a.lastDone, m.opt.AutoRefresh.Targets), now) {
 		return m.refreshTargets()
 	}
 	return m.scheduleTargetsTick(now)

@@ -13,8 +13,9 @@ It works even if the connection’s metrics endpoint is unavailable.
   status, end time, and creator sorts.
 - **Enter** opens Details; **a** shows currently matching alerts. Use the
   arrow or page keys to scroll, and **Esc** to go back.
-- **r** refreshes immediately. The open tab also refreshes about every
-  30 seconds.
+- **r** refreshes immediately. Polling is off by default; opt in with
+  [`auto_refresh.silences`](configuration.md#pane-auto-refresh). Silence
+  start and expiry states update locally even when polling is off.
 
 ## Create a silence
 

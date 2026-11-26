@@ -309,11 +309,11 @@ Show loading state without clearing existing data.
 
 ### Automatic refresh
 
-Default interval: **30 seconds**.
+Off by default. Opt in with [`auto_refresh.alerts`](configuration.md#pane-auto-refresh).
 
 Requirements:
 
-- Refresh automatically while the Alerts tab is active.
+- When enabled, refresh automatically only while the Alerts tab is active.
 - Do not create duplicate refresh loops.
 - Do not overlap requests unnecessarily.
 - Cancel or ignore obsolete requests.
@@ -321,7 +321,8 @@ Requirements:
 - Keep an open details overlay on its original snapshot during automatic refreshes.
 - Avoid unnecessary visual flickering.
 
-When returning to Alerts after visiting another tab, refresh if cached data is stale.
+When polling is enabled, returning to Alerts refreshes cached data if the
+configured interval has elapsed.
 
 ### Error handling
 

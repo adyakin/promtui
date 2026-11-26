@@ -51,6 +51,8 @@ Open **5 Rules** to browse alerting and recording rules, inspect active alert in
 
 Start with the [YAML config example](examples/config.example.yaml) or the [TOML config example](examples/config.example.toml). The default connection points to Prometheus at `http://localhost:9090`. To use the Alerts tab, set `alertmanager_url` for that connection, for example `http://localhost:9093`. See the [configuration reference](docs/configuration.md) for more options.
 
+Panes don’t poll by default. Press `r` to refresh the open data pane, or set a [per-pane auto-refresh interval](docs/configuration.md#pane-auto-refresh).
+
 In Alerts, press `Enter` to see [inhibition sources, targets, and matching rules](docs/03-alerts.md#inhibition). When related alerts are available, press `i` to choose one and `Esc` to go back.
 
 Use **Ctrl+O** to open saved filters or [named table views](docs/configuration.md#named-alerts-views), and **D** to reset the view for the current connection. In **/** search, use **↑/↓** to highlight a suggested alert name before pressing **Enter**, or press **Enter** without selecting a suggestion to apply the text you typed.

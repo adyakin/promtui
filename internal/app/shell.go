@@ -96,7 +96,8 @@ func (m *Model) shellKey(key tea.KeyPressMsg) (tea.Cmd, bool) {
 		if m.activeTab == routingTab && m.routing.cancel != nil {
 			m.routing.stop()
 			m.routing.err, m.routing.errorOffset = context.Canceled, 0
-			return nil, true
+			m.routing.lastDone = time.Now()
+			return m.scheduleRoutingTick(m.routing.lastDone), true
 		}
 		if m.activeTab == silencesTab && m.silences.listCancel != nil {
 			s := &m.silences
@@ -143,9 +144,11 @@ func (m *Model) switchTab(next tabID) tea.Cmd {
 	}
 	m.mouse.last = mouseClick{}
 	m.showURLFeedback = false
+	m.paneTimer.stop()
 	switch m.activeTab {
 	case routingTab:
 		m.cancelRoutingSearch()
+		m.routing.stop()
 	case rulesTab:
 		m.cancelRulesSearch()
 		m.rules.stop()
@@ -165,9 +168,7 @@ func (m *Model) switchTab(next tabID) tea.Cmd {
 	case targetsTab:
 		return m.targetsOnEntry(time.Now())
 	case routingTab:
-		if m.routing.data == nil {
-			return m.refreshRouting()
-		}
+		return m.routingOnEntry(time.Now())
 	case rulesTab:
 		return m.rulesOnEntry(time.Now())
 	}

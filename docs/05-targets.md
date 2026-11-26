@@ -371,12 +371,13 @@ The footer must remain context-sensitive and display only relevant actions.
 
 ## 10. Refresh Behavior
 
-Default auto-refresh interval: 30 seconds.
+Off by default. Opt in with [`auto_refresh.targets`](configuration.md#pane-auto-refresh).
 
 Requirements:
 
-- Refresh while Targets tab is active.
-- Refresh stale data when returning to Targets.
+- When enabled, refresh automatically only while the Targets tab is active.
+- When polling is enabled, returning to Targets refreshes cached data if the
+  configured interval has elapsed.
 - Support manual refresh with `r`.
 - Avoid overlapping requests for the same source.
 - Cancel or ignore obsolete requests.

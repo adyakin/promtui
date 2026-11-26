@@ -55,6 +55,35 @@ func TestMouseConfig(t *testing.T) {
 	}
 }
 
+func TestAutoRefreshConfig(t *testing.T) {
+	want := AutoRefresh{Alerts: 5 * time.Second, Rules: time.Minute, Targets: 2 * time.Minute, Routing: time.Hour}
+	for _, tc := range []struct {
+		path, data string
+		want       AutoRefresh
+	}{
+		{"config.yaml", "", AutoRefresh{}},
+		{"config.toml", "", AutoRefresh{}},
+		{"config.yaml", "auto_refresh: {alerts: 5s, rules: 1m, targets: 2m, silences: 0s, routing: 1h}", want},
+		{"config.toml", "[auto_refresh]\nalerts='5s'\nrules='1m'\ntargets='2m'\nsilences='0s'\nrouting='1h'", want},
+		{"config.yaml", "auto_refresh: {silences: 15s}", AutoRefresh{Silences: 15 * time.Second}},
+	} {
+		cfg, err := decode(tc.path, []byte(tc.data))
+		if err != nil || cfg.AutoRefresh != tc.want {
+			t.Errorf("%s %q: auto-refresh = %+v, error = %v; want %+v", tc.path, tc.data, cfg.AutoRefresh, err, tc.want)
+		}
+	}
+	for _, tc := range []struct{ path, data, want string }{
+		{"config.yaml", "auto_refresh: {alerts: -1s}", "auto_refresh.alerts must not be negative"},
+		{"config.toml", "[auto_refresh]\nrouting='-1m'", "auto_refresh.routing must not be negative"},
+		{"config.yaml", "auto_refresh: {rules: never}", "never"},
+		{"config.toml", "[auto_refresh]\ntargets='never'", "never"},
+	} {
+		if _, err := decode(tc.path, []byte(tc.data)); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s %q: expected error containing %q, got %v", tc.path, tc.data, tc.want, err)
+		}
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	c, err := Load(path, true)

@@ -85,16 +85,17 @@ func TestTargetsIndependentRefresh(t *testing.T) {
 		if p == 3 && a.sources[1].rows[0].instance != "recovered" {
 			t.Fatal(screen)
 		}
-		now = now.Add(targetRefreshInterval)
+		now = now.Add(time.Minute)
 	}
 }
 
 func TestTargetsBoundedQueueAndCancellation(t *testing.T) {
+	const interval = 17 * time.Second
 	var sources []config.TargetSource
 	for i := range targetConcurrency + 2 {
 		sources = append(sources, config.TargetSource{Name: fmt.Sprint(i), URL: "http://example.test"})
 	}
-	m := New(Options{Connection: config.Connection{Targets: sources}}, nil)
+	m := New(Options{Connection: config.Connection{Targets: sources}, AutoRefresh: config.AutoRefresh{Targets: interval}}, nil)
 	m.activeTab = targetsTab
 	a := &m.targets
 	start := targetCommands(m.refreshTargets())
@@ -102,13 +103,14 @@ func TestTargetsBoundedQueueAndCancellation(t *testing.T) {
 		t.Fatal("queue must only dispatch up to the concurrency bound")
 	}
 	id := a.requestID
+	now := time.Now().Add(-interval)
 	for i := range len(sources) {
-		cmd := m.onTargetsCompleted(targetsCompleted{id: id, source: i}, time.Now())
+		cmd := m.onTargetsCompleted(targetsCompleted{id: id, source: i}, now)
 		if (i < 2 || i == len(sources)-1) != (cmd != nil) {
 			t.Fatalf("unexpected command after %d", i)
 		}
 	}
-	if cmd := m.onTargetsTick(a.lastDone.Add(targetRefreshInterval)); cmd == nil {
+	if cmd := m.onPaneRefreshTick(m.paneTimer.id, now.Add(interval)); cmd == nil {
 		t.Fatal("auto-refresh did not run at the interval")
 	}
 	ctx, id := a.ctx, a.requestID

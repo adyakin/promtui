@@ -39,6 +39,7 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 		if next.Name == m.opt.Connection.Name {
 			return nil
 		}
+		m.paneTimer.stop()
 		if m.stop() {
 			m.reportProgramStatus(programstatus.Idle, "")
 		}
@@ -51,23 +52,23 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 		m.alerts.stop()
 		m.cancelAlertNavigation()
 		m.alertNavigation.cache.at = time.Time{}
-		requestID, tickQueued := m.alerts.requestID, m.alerts.tickQueued
+		requestID := m.alerts.requestID
 		structured := m.alerts.structured
 		m.alerts = newAlertsState(next.Alerts)
-		m.alerts.requestID, m.alerts.tickQueued = requestID, tickQueued
+		m.alerts.requestID = requestID
 		m.alerts.structured = structured
 		m.alerts.input.SetWidth(max(1, m.width-13))
 
 		m.silences.stop()
-		serial, silenceTick := m.silences.serial, m.silences.tickQueued
+		serial := m.silences.serial
 		m.silences = newSilencesState()
-		m.silences.serial, m.silences.tickQueued = serial, silenceTick
+		m.silences.serial = serial
 		m.sizeSilenceInputs()
 
 		m.targets.stop(nil)
-		targetID, targetTick, dialogID := m.targets.requestID, m.targets.tickQueued, m.targets.dialogID
+		targetID, dialogID := m.targets.requestID, m.targets.dialogID
 		m.targets = newTargetsState(next)
-		m.targets.requestID, m.targets.tickQueued, m.targets.dialogID = targetID, targetTick, dialogID
+		m.targets.requestID, m.targets.dialogID = targetID, dialogID
 		m.targets.input.SetWidth(max(1, m.width-13))
 		m.routing.stop()
 		routingID, showReceivers := m.routing.requestID, m.routing.showReceivers
@@ -75,9 +76,9 @@ func (m *Model) connectionKey(key string) tea.Cmd {
 		m.routing.requestID, m.routing.showReceivers = routingID, showReceivers
 		m.sizeRoutingInput()
 		m.rules.stop()
-		rulesID, rulesTick := m.rules.requestID, m.rules.tickQueued
+		rulesID := m.rules.requestID
 		m.rules = newRulesState(next)
-		m.rules.requestID, m.rules.tickQueued = rulesID, rulesTick
+		m.rules.requestID = rulesID
 		m.sizeRulesInput()
 		m.opt.Connection = next
 		m.restoreAlertView()

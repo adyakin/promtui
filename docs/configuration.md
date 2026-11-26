@@ -20,6 +20,7 @@ PromTUI never rewrites either file.
 | `query.timeout` | `30s` |
 | `query.default_range` | `1h` |
 | `query.max_series` | `500` |
+| `auto_refresh` | Off for every pane; see [Pane auto-refresh](#pane-auto-refresh) |
 | `terminal.program_status` | `true`; reports explicit PromQL query status to the terminal via OSC 7501 |
 | `ui.mouse` | `false`; enables optional mouse reporting |
 | `silence_creator` | Empty; optional editable default for the Created by field in new silence drafts |
@@ -34,6 +35,32 @@ are supported.
 
 Set `terminal.program_status` to `false` to suppress OSC 7501 reports. The
 setting does not change the in-app status or error messages.
+
+## Pane auto-refresh
+
+Alerts, Rules, Targets, Silences, and Routing load on first entry. Press `r`
+in the pane to refresh manually. Returning to a cached pane does not fetch
+again by default. PromQL queries always run on demand.
+
+To opt in to polling, set a positive Go duration for each pane you want
+refreshed. The settings apply to all connections. Omit a pane or set its
+interval to `0s` to disable polling for it. Negative intervals are invalid.
+Only the open pane polls, starting its interval when a request finishes. If
+the interval has already elapsed when you return to the pane, it refreshes
+immediately. This is independent of `query.timeout`.
+
+```yaml
+auto_refresh:
+  alerts: 30s
+  rules: 1m
+  targets: 0s
+  silences: 0s
+  routing: 0s
+```
+
+In TOML, use an `[auto_refresh]` table and quote durations (for example,
+`alerts = "30s"`). Silences still updates start and expiry states locally
+without polling Alertmanager.
 
 ## Mouse and terminal links
 

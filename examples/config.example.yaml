@@ -16,6 +16,14 @@ terminal:
 ui:
   mouse: false # Set to true for clicking and wheel scrolling.
 
+# Use a positive interval (e.g. 30s) to poll the open pane.
+auto_refresh:
+  alerts: 0s
+  rules: 0s
+  targets: 0s
+  silences: 0s
+  routing: 0s
+
 # Named Alerts views can also be defined in alert_views.d/*.yaml beside this file.
 # alerts:
 #   views:

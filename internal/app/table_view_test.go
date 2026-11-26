@@ -24,13 +24,14 @@ func checkViewHeader(t *testing.T, screen, want string) {
 }
 
 func TestCustomAlertView(t *testing.T) {
+	const interval = 17 * time.Second
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	conn := config.Connection{Name: "prod", AlertmanagerURL: "http://alertmanager",
 		Alerts: config.TableView{
 			Columns: []config.Column{{Field: "labels.app.service", Title: "My Service"}, {Field: "state"}, {Field: "duration"}},
 			Search:  []string{"labels.hidden", "labels.other"},
 		}}
-	m := New(Options{Connection: conn}, nil)
+	m := New(Options{Connection: conn, AutoRefresh: config.AutoRefresh{Alerts: interval}}, nil)
 	m.resize(80, 14)
 	press(m, '1')
 	defer m.alerts.stop()
@@ -80,8 +81,8 @@ func TestCustomAlertView(t *testing.T) {
 		t.Fatal("hidden label did not match")
 	}
 	id := m.alerts.selection()
-	now = now.Add(alertRefreshInterval)
-	if m.onAlertsTick(now) == nil {
+	now = now.Add(interval)
+	if m.onPaneRefreshTick(m.paneTimer.id, now) == nil {
 		t.Fatal("expected automatic refresh")
 	}
 	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, rows: rows}, now)
@@ -95,6 +96,7 @@ func TestCustomAlertView(t *testing.T) {
 }
 
 func TestCustomTargetView(t *testing.T) {
+	const interval = 17 * time.Second
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	conn := config.Connection{Targets: []config.TargetSource{{Name: "east"}, {Name: "west"}},
 		TargetsView: config.TableView{
@@ -102,7 +104,7 @@ func TestCustomTargetView(t *testing.T) {
 				{Field: "last_scrape", Title: "Age"}, {Field: "scrape_url", Title: "Endpoint"}},
 			Search: []string{"labels.hidden", "labels.other"},
 		}}
-	m := New(Options{Connection: conn}, nil)
+	m := New(Options{Connection: conn, AutoRefresh: config.AutoRefresh{Targets: interval}}, nil)
 	m.resize(96, 14)
 	press(m, '3')
 	defer m.targets.stop(nil)
@@ -162,8 +164,8 @@ func TestCustomTargetView(t *testing.T) {
 		t.Fatal("hidden label search should combine with health filter")
 	}
 	id = m.targets.selection()
-	now = now.Add(targetRefreshInterval)
-	if m.onTargetsTick(now) == nil {
+	now = now.Add(interval)
+	if m.onPaneRefreshTick(m.paneTimer.id, now) == nil {
 		t.Fatal("expected automatic refresh")
 	}
 	complete(now)

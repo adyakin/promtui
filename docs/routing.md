@@ -39,8 +39,10 @@ press `Enter` to jump directly to the list of referencing routes.
 
 Routing reads `config.original` from **GET `/api/v2/status`** at the current
 connection's `alertmanager_url`, using the same TLS settings and timeout as
-Silences. It loads on entry when there is no snapshot and refreshes manually;
-it does not poll. If a refresh fails, the last successful snapshot for that
+Silences. It loads on entry when there is no snapshot and refreshes with `r`.
+Polling is off by default; opt in with
+[`auto_refresh.routing`](configuration.md#pane-auto-refresh).
+If a refresh fails, the last successful snapshot for that
 connection remains visible and is marked stale. Switching connections discards
 that snapshot.
 

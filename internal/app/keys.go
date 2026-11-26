@@ -360,6 +360,7 @@ func (m *Model) act(id, key string, scope keyScope) tea.Cmd {
 	case "quit":
 		m.dismiss()
 		m.stop()
+		m.paneTimer.stop()
 		m.alerts.stop()
 		m.silences.stop()
 		m.targets.stop(nil)

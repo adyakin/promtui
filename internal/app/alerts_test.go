@@ -230,6 +230,7 @@ func TestAlertsNavigationFilterAndOverlay(t *testing.T) {
 }
 
 func TestAlertsRefreshLifecycle(t *testing.T) {
+	const interval = 17 * time.Second
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/prefix/api/v2/status" {
 			fmt.Fprint(w, `{"config":{"original":"{}"}}`)
@@ -242,20 +243,20 @@ func TestAlertsRefreshLifecycle(t *testing.T) {
 			{"fingerprint":"b","labels":{"alertname":"Second"},"status":{"state":"active"}}]`)
 	}))
 	defer server.Close()
-	m := New(Options{Timeout: time.Second, Connection: config.Connection{AlertmanagerURL: server.URL + "/prefix"}}, nil)
+	m := New(Options{Timeout: time.Second, AutoRefresh: config.AutoRefresh{Alerts: interval}, Connection: config.Connection{AlertmanagerURL: server.URL + "/prefix"}}, nil)
 	now := time.Now()
 	first := pressAlt(m, '1')
 	if first == nil || m.refreshAlerts() != nil {
 		t.Fatal("overlapping refresh")
 	}
-	if tick := m.onAlertsCompleted(first().(alertsCompleted), now); tick == nil || !m.alerts.tickQueued || m.scheduleAlertsTick(now) != nil {
+	if tick := m.onAlertsCompleted(first().(alertsCompleted), now); tick == nil || m.scheduleAlertsTick(now) != nil {
 		t.Fatal("expected exactly one scheduled refresh tick")
 	}
 	press(m, tea.KeyEnd, tea.KeyEnter)
 	if m.alerts.detail.Fingerprint != "b" {
 		t.Fatal("wrong initial selection")
 	}
-	auto := m.onAlertsTick(now.Add(alertRefreshInterval))
+	auto := m.onPaneRefreshTick(m.paneTimer.id, now.Add(interval))
 	if auto == nil || m.refreshAlerts() != nil {
 		t.Fatal("automatic refresh not started or duplicate started")
 	}
@@ -263,18 +264,18 @@ func TestAlertsRefreshLifecycle(t *testing.T) {
 		testAlert("a", "First", "info", "active", now),
 		testAlert("b", "Changed", "critical", "active", now),
 	}
-	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, rows: newRows}, now.Add(alertRefreshInterval))
+	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, rows: newRows}, now.Add(interval))
 	if m.alerts.row != 0 || m.alerts.visible[0].Fingerprint != "b" || m.alerts.detail.Labels["alertname"] != "Second" {
 		t.Fatal("automatic refresh lost the stable selection or changed open details")
 	}
 	press(m, tea.KeyEsc, tea.KeyEnd)
 	_ = m.refreshAlerts()
-	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, rows: newRows[1:]}, now.Add(alertRefreshInterval))
+	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, rows: newRows[1:]}, now.Add(interval))
 	if m.alerts.row != 0 || len(m.alerts.visible) != 1 || m.alerts.visible[0].Fingerprint != "b" {
 		t.Fatal("disappeared selection did not move to nearest row")
 	}
 	_ = m.refreshAlerts()
-	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, err: alertmanager.ErrAuth}, now.Add(alertRefreshInterval))
+	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID, err: alertmanager.ErrAuth}, now.Add(interval))
 	if screen := ansi.Strip(m.screen()); len(m.alerts.visible) != 1 ||
 		!strings.Contains(screen, "│  Authentication failed") || strings.Contains(screen, "Changed") {
 		t.Fatalf("error did not replace cached data in the pane:\n%s", screen)
@@ -290,14 +291,14 @@ func TestAlertsRefreshLifecycle(t *testing.T) {
 		m.onAlertsCompleted(obsolete, now) != nil || !errors.Is(m.alerts.err, alertmanager.ErrAuth) {
 		t.Fatal("obsolete request changed the alert cache")
 	}
-	if m.onAlertsTick(now.Add(2*alertRefreshInterval)) != nil {
+	if m.onAlertsTick(now.Add(2*interval)) != nil {
 		t.Fatal("automatically refreshed hidden Alerts")
 	}
 	m.activeTab = alertsTab
-	if m.alertsOnEntry(now.Add(2*alertRefreshInterval)) == nil {
+	if m.alertsOnEntry(now.Add(2*interval)) == nil {
 		t.Fatal("stale data not refreshed on return")
 	}
-	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID}, now.Add(2*alertRefreshInterval))
+	m.onAlertsCompleted(alertsCompleted{id: m.alerts.requestID}, now.Add(2*interval))
 	if !strings.Contains(m.screen(), "No active alerts") || m.alerts.err != nil {
 		t.Fatal("successful empty result not distinguished from a failure")
 	}
